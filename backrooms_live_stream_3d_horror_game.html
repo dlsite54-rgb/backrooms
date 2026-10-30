@@ -1,0 +1,2565 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>BACKROOMS: LIVE STREAM - 3D Survival Horror</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=VT323&family=Noto+Sans+KR:wght@400;700;900&family=Noto+Sans+JP:wght@400;700;900&family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <style>
+        * {
+            user-select: none;
+            -webkit-user-select: none;
+            box-sizing: border-box;
+        }
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #050503;
+            font-family: 'Inter', 'Noto Sans KR', 'Noto Sans JP', sans-serif;
+            color: #f3f4f6;
+        }
+        #game-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: block;
+            z-index: 1;
+        }
+        /* VHS & Camcorder Overlay Effects */
+        .vhs-scanlines {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            z-index: 10;
+            background: linear-gradient(
+                rgba(18, 16, 16, 0) 50%, 
+                rgba(0, 0, 0, 0.35) 50%
+            ), linear-gradient(
+                90deg,
+                rgba(255, 0, 0, 0.03),
+                rgba(0, 255, 0, 0.01),
+                rgba(0, 0, 255, 0.03)
+            );
+            background-size: 100% 3px, 6px 100%;
+        }
+        .vignette-overlay {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            z-index: 11;
+            box-shadow: inset 0 0 120px rgba(0, 0, 0, 0.88);
+            transition: box-shadow 0.2s ease;
+        }
+        .glitch-overlay {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            z-index: 12;
+            opacity: 0;
+            background: repeating-linear-gradient(
+                0deg,
+                rgba(255, 0, 50, 0.18) 0px,
+                rgba(0, 255, 255, 0.15) 2px,
+                transparent 4px,
+                transparent 12px
+            );
+            mix-blend-mode: screen;
+        }
+        .vhs-font {
+            font-family: 'VT323', monospace;
+        }
+        @keyframes pulse-rec {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.25; transform: scale(0.92); }
+        }
+        .rec-dot {
+            animation: pulse-rec 1.1s infinite ease-in-out;
+        }
+        @keyframes chat-slide-in {
+            from { opacity: 0; transform: translateX(16px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+        .chat-msg {
+            animation: chat-slide-in 0.22s ease-out forwards;
+        }
+        @keyframes superchat-pop {
+            0% { transform: scale(0.8) translateY(20px); opacity: 0; }
+            15% { transform: scale(1.04) translateY(0); opacity: 1; }
+            85% { transform: scale(1) translateY(0); opacity: 1; }
+            100% { transform: scale(0.95) translateY(-10px); opacity: 0; }
+        }
+        .superchat-anim {
+            animation: superchat-pop 4.2s ease-in-out forwards;
+        }
+        /* Custom scrollbar for chat */
+        #chat-messages::-webkit-scrollbar {
+            width: 4px;
+        }
+        #chat-messages::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+        }
+        /* Camcorder Corner Brackets */
+        .cam-corner {
+            position: absolute;
+            width: 28px;
+            height: 28px;
+            border-color: rgba(255, 255, 255, 0.35);
+            pointer-events: none;
+            z-index: 15;
+        }
+        .cam-tl { top: 14px; left: 14px; border-top: 2px solid; border-left: 2px solid; }
+        .cam-tr { top: 14px; right: 14px; border-top: 2px solid; border-right: 2px solid; }
+        .cam-bl { bottom: 14px; left: 14px; border-bottom: 2px solid; border-left: 2px solid; }
+        .cam-br { bottom: 14px; right: 14px; border-bottom: 2px solid; border-right: 2px solid; }
+    </style>
+</head>
+<body>
+
+    <!-- 3D WebGL Canvas -->
+    <canvas id="game-canvas"></canvas>
+
+    <!-- VHS Post-Processing Overlays -->
+    <div class="vhs-scanlines"></div>
+    <div id="vignette" class="vignette-overlay"></div>
+    <div id="glitch-layer" class="glitch-overlay"></div>
+    <canvas id="static-canvas" class="fixed inset-0 pointer-events-none z-13 opacity-0 transition-opacity duration-150" style="mix-blend-mode: screen;"></canvas>
+
+    <!-- Camcorder Frame Corners -->
+    <div class="cam-corner cam-tl"></div>
+    <div class="cam-corner cam-tr"></div>
+    <div class="cam-corner cam-bl"></div>
+    <div class="cam-corner cam-br"></div>
+
+    <!-- Center Crosshair & Interaction Prompt -->
+    <div id="crosshair-container" class="fixed inset-0 pointer-events-none z-20 flex flex-col items-center justify-center hidden">
+        <div id="crosshair" class="w-2 h-2 rounded-full bg-white/70 border border-black/50 transition-transform duration-150"></div>
+        <div id="interact-prompt" class="mt-4 px-3 py-1 rounded bg-black/80 border border-yellow-400/60 text-yellow-300 text-sm font-bold tracking-wide hidden shadow-lg">
+            [E] INTERACT
+        </div>
+    </div>
+
+    <!-- IN-GAME LIVE STREAM HUD -->
+    <div id="game-hud" class="fixed inset-0 pointer-events-none z-20 hidden flex flex-col justify-between p-4 sm:p-6">
+        
+        <!-- Top Row: Live Stream Status + Radar + Language Selector -->
+        <div class="flex flex-wrap items-start justify-between gap-3">
+            
+            <!-- Top-Left: Live Streamer Badge & Viewer Stats -->
+            <div class="flex flex-col gap-2 bg-black/65 backdrop-blur-md border border-white/15 rounded-xl p-3 shadow-2xl pointer-events-auto">
+                <div class="flex items-center gap-3">
+                    <div class="flex items-center gap-1.5 bg-red-600/90 px-2.5 py-0.5 rounded-md text-xs font-black tracking-wider uppercase shadow">
+                        <span class="w-2 h-2 rounded-full bg-white rec-dot"></span>
+                        <span data-i18n="live_badge">LIVE</span>
+                    </div>
+                    <div class="vhs-font text-xl text-neutral-200 tracking-widest" id="stream-timer">00:00:00</div>
+                    <div class="flex items-center gap-1 bg-white/10 px-2 py-0.5 rounded text-xs font-bold text-red-300">
+                        <svg class="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>
+                        <span id="viewer-count">142</span>
+                    </div>
+                    <div class="flex items-center gap-1 bg-amber-500/20 border border-amber-400/40 px-2 py-0.5 rounded text-xs font-bold text-amber-300">
+                        <span>$</span><span id="donation-total">0</span>
+                    </div>
+                </div>
+
+                <!-- Objective Progress & Signal Tracker -->
+                <div class="flex items-center gap-3 pt-1 border-t border-white/10 text-xs">
+                    <div class="flex items-center gap-1.5">
+                        <span class="text-yellow-400 font-bold" data-i18n="hud_tapes">VHS TAPES:</span>
+                        <span id="tape-counter" class="font-mono font-extrabold text-sm text-white bg-yellow-500/20 border border-yellow-400/40 px-2 py-0.5 rounded">0 / 4</span>
+                    </div>
+                    <div class="flex items-center gap-1.5">
+                        <span class="text-emerald-400 font-bold" data-i18n="hud_signal">SIGNAL:</span>
+                        <div class="flex items-end gap-0.5 h-3.5" id="signal-bars">
+                            <div class="w-1.5 h-1.5 bg-emerald-400 rounded-sm"></div>
+                            <div class="w-1.5 h-2 bg-emerald-400/30 rounded-sm"></div>
+                            <div class="w-1.5 h-2.5 bg-emerald-400/30 rounded-sm"></div>
+                            <div class="w-1.5 h-3.5 bg-emerald-400/30 rounded-sm"></div>
+                        </div>
+                        <span id="signal-dist" class="font-mono text-[11px] text-neutral-300">--m</span>
+                    </div>
+                </div>
+
+                <!-- Threat / Entity Alert Banner -->
+                <div id="entity-warning" class="hidden items-center gap-2 bg-red-950/90 border border-red-500/70 px-2.5 py-1 rounded text-xs font-extrabold text-red-300 animate-pulse">
+                    <span>⚠️</span>
+                    <span id="entity-warning-text" data-i18n="warning_entity">ENTITY DETECTED NEARBY!</span>
+                </div>
+            </div>
+
+            <!-- Top-Center: Mini Radar & Compass -->
+            <div class="hidden md:flex flex-col items-center bg-black/65 backdrop-blur-md border border-white/15 rounded-xl p-2.5 shadow-xl">
+                <canvas id="radar-canvas" width="96" height="96" class="rounded-full border border-emerald-500/40 bg-emerald-950/40"></canvas>
+                <span class="text-[10px] text-emerald-300/80 font-mono mt-1 tracking-wider" data-i18n="radar_label">SIGNAL FINDER</span>
+            </div>
+
+            <!-- Top-Right: Language Switcher & Quick Controls -->
+            <div class="flex flex-col items-end gap-2 pointer-events-auto">
+                <div class="flex items-center gap-1 bg-black/70 backdrop-blur-md border border-white/15 rounded-lg p-1">
+                    <button onclick="setLanguage('ko')" class="lang-btn px-2.5 py-1 rounded text-xs font-bold transition" data-lang="ko">한국어</button>
+                    <button onclick="setLanguage('ja')" class="lang-btn px-2.5 py-1 rounded text-xs font-bold transition" data-lang="ja">日本語</button>
+                    <button onclick="setLanguage('en')" class="lang-btn px-2.5 py-1 rounded text-xs font-bold transition" data-lang="en">EN</button>
+                    <button onclick="togglePauseMenu()" class="ml-1 px-2.5 py-1 rounded bg-white/10 hover:bg-white/20 text-xs font-bold text-neutral-200" title="Pause / Settings">⚙️</button>
+                </div>
+                <div id="pointer-hint" class="text-[11px] bg-black/60 px-2.5 py-1 rounded border border-white/10 text-neutral-300 hidden sm:block" data-i18n="click_to_lock">
+                    화면 클릭: 마우스 시점 고정 | [F] 손전등 | [Shift] 달리기 | [Q] 시청자 힌트
+                </div>
+            </div>
+        </div>
+
+        <!-- Middle Area: SuperChat Popup Container & Right-Side Live Chat -->
+        <div class="flex-1 flex items-end justify-between gap-4 my-2 overflow-hidden">
+            
+            <!-- Bottom-Left: Flashlight Battery, Stamina, and Controls -->
+            <div class="flex flex-col gap-2.5 bg-black/65 backdrop-blur-md border border-white/15 rounded-xl p-3.5 w-64 sm:w-72 pointer-events-auto shadow-2xl">
+                
+                <!-- SuperChat Toast Area -->
+                <div id="superchat-container" class="min-h-[4px]"></div>
+
+                <!-- Flashlight Battery Bar -->
+                <div>
+                    <div class="flex justify-between items-center text-xs mb-1">
+                        <span class="font-bold text-amber-300 flex items-center gap-1">
+                            <span>🔦</span>
+                            <span data-i18n="hud_battery">FLASHLIGHT</span>
+                            <span id="flashlight-state-badge" class="ml-1 px-1.5 py-0.2 rounded text-[10px] bg-amber-400/20 text-amber-200">ON</span>
+                        </span>
+                        <span id="battery-pct" class="font-mono text-neutral-300">100%</span>
+                    </div>
+                    <div class="w-full h-2.5 bg-neutral-800 rounded-full overflow-hidden border border-white/10">
+                        <div id="battery-bar" class="h-full bg-gradient-to-r from-amber-500 to-yellow-300 transition-all duration-150" style="width: 100%;"></div>
+                    </div>
+                    <div class="text-[10px] text-neutral-400 mt-0.5" data-i18n="battery_recharge_hint">끄면 자가발전으로 조금씩 충전됩니다</div>
+                </div>
+
+                <!-- Sprint Stamina Bar -->
+                <div>
+                    <div class="flex justify-between items-center text-xs mb-1">
+                        <span class="font-bold text-sky-300 flex items-center gap-1">
+                            <span>⚡</span>
+                            <span data-i18n="hud_stamina">STAMINA</span>
+                        </span>
+                        <span id="stamina-pct" class="font-mono text-neutral-300">100%</span>
+                    </div>
+                    <div class="w-full h-2 bg-neutral-800 rounded-full overflow-hidden border border-white/10">
+                        <div id="stamina-bar" class="h-full bg-gradient-to-r from-sky-500 to-cyan-300 transition-all duration-150" style="width: 100%;"></div>
+                    </div>
+                </div>
+
+                <!-- Quick Action Buttons (Helpful for both mouse & touch users) -->
+                <div class="grid grid-cols-3 gap-1.5 pt-1">
+                    <button onclick="toggleFlashlight()" class="bg-amber-500/20 hover:bg-amber-500/35 active:scale-95 border border-amber-400/40 rounded-lg py-1.5 px-2 text-xs font-bold text-amber-200 transition">
+                        🔦 <span data-i18n="btn_light">손전등(F)</span>
+                    </button>
+                    <button onclick="askChatHint()" class="bg-emerald-500/20 hover:bg-emerald-500/35 active:scale-95 border border-emerald-400/40 rounded-lg py-1.5 px-2 text-xs font-bold text-emerald-200 transition">
+                        📡 <span data-i18n="btn_hint">힌트(Q)</span>
+                    </button>
+                    <button onclick="interactAction()" class="bg-purple-500/20 hover:bg-purple-500/35 active:scale-95 border border-purple-400/40 rounded-lg py-1.5 px-2 text-xs font-bold text-purple-200 transition">
+                        ✋ <span data-i18n="btn_use">상호작용(E)</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Mobile / Touch On-Screen Joystick (Visible on touch/small screens) -->
+            <div id="touch-controls" class="flex sm:hidden items-center gap-2 pointer-events-auto">
+                <div class="grid grid-cols-3 gap-1 bg-black/60 p-2 rounded-xl border border-white/15">
+                    <div></div>
+                    <button id="t-up" class="w-11 h-11 bg-white/15 active:bg-white/30 rounded-lg font-bold text-lg">▲</button>
+                    <div></div>
+                    <button id="t-left" class="w-11 h-11 bg-white/15 active:bg-white/30 rounded-lg font-bold text-lg">◀</button>
+                    <button id="t-down" class="w-11 h-11 bg-white/15 active:bg-white/30 rounded-lg font-bold text-lg">▼</button>
+                    <button id="t-right" class="w-11 h-11 bg-white/15 active:bg-white/30 rounded-lg font-bold text-lg">▶</button>
+                </div>
+            </div>
+
+            <!-- Right Side: Real-Time Live Stream Chat Box -->
+            <div class="w-64 sm:w-80 h-64 sm:h-80 bg-black/60 backdrop-blur-md border border-white/15 rounded-xl flex flex-col overflow-hidden pointer-events-auto shadow-2xl">
+                <div class="px-3 py-2 bg-white/5 border-b border-white/10 flex items-center justify-between text-xs font-bold">
+                    <div class="flex items-center gap-1.5">
+                        <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+                        <span data-i18n="chat_header">실시간 스트리밍 채팅</span>
+                    </div>
+                    <span class="text-[11px] text-neutral-400 font-mono" id="chat-rate-label">LIVE CHAT</span>
+                </div>
+                <div id="chat-messages" class="flex-1 p-3 overflow-y-auto space-y-2 text-xs leading-relaxed">
+                    <!-- Dynamic viewer comments injected here -->
+                </div>
+                <div class="p-2 bg-black/50 border-t border-white/10 flex items-center gap-1.5">
+                    <button onclick="askChatHint()" class="w-full py-1.5 px-3 rounded bg-white/10 hover:bg-white/20 text-left text-[11px] text-neutral-300 flex items-center justify-between transition">
+                        <span data-i18n="ask_chat_placeholder">시청자들에게 길 물어보기...</span>
+                        <span class="px-1.5 py-0.5 bg-emerald-500/30 text-emerald-300 rounded font-mono text-[10px]">[Q]</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- TITLE / START SCREEN MODAL -->
+    <div id="title-screen" class="fixed inset-0 z-30 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+        <div class="max-w-2xl w-full bg-neutral-950/95 border border-yellow-500/30 rounded-2xl p-6 sm:p-8 shadow-[0_0_80px_rgba(202,138,4,0.2)] relative overflow-hidden">
+            
+            <!-- Language Selector Top Bar -->
+            <div class="flex justify-between items-center mb-6 pb-4 border-b border-white/10">
+                <div class="flex items-center gap-2">
+                    <span class="w-3 h-3 rounded-full bg-red-600 rec-dot"></span>
+                    <span class="vhs-font text-lg tracking-widest text-yellow-400/90">CAM_1996 // LEVEL_0</span>
+                </div>
+                <div class="flex items-center gap-1.5 bg-neutral-900 p-1 rounded-lg border border-white/10">
+                    <button onclick="setLanguage('ko')" class="lang-btn px-3 py-1 rounded text-xs font-bold transition" data-lang="ko">한국어</button>
+                    <button onclick="setLanguage('ja')" class="lang-btn px-3 py-1 rounded text-xs font-bold transition" data-lang="ja">日本語</button>
+                    <button onclick="setLanguage('en')" class="lang-btn px-3 py-1 rounded text-xs font-bold transition" data-lang="en">English</button>
+                </div>
+            </div>
+
+            <!-- Main Game Title -->
+            <div class="mb-6">
+                <div class="inline-block px-2.5 py-0.5 rounded bg-red-600/20 border border-red-500/40 text-red-400 text-xs font-extrabold tracking-widest uppercase mb-2" data-i18n="title_tag">
+                    FOUND FOOTAGE & LIVE STREAM HORROR
+                </div>
+                <h1 class="text-3xl sm:text-5xl font-black tracking-tight text-yellow-100 drop-shadow-[0_2px_12px_rgba(234,179,8,0.3)]" data-i18n="game_title">
+                    BACKROOMS: LIVE STREAM
+                </h1>
+                <p class="mt-2 text-sm sm:text-base text-neutral-300 leading-relaxed" data-i18n="game_desc">
+                    당신은 공포 폐가 스트리머입니다. 촬영 도중 바닥 아래로 추락해 끝없는 노란 벽지와 축축한 카펫, 윙윙거리는 형광등의 미로 「백룸 Level 0」에 갇혔습니다. 실시간 시청자들의 채팅과 후원에 의지해 정체불명의 괴물을 피해 4개의 VHS 테이프를 찾아 탈출하세요.
+                </p>
+            </div>
+
+            <!-- Controls & Features Grid -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6 text-xs">
+                <div class="bg-white/5 border border-white/10 rounded-xl p-3.5">
+                    <h3 class="font-bold text-yellow-400 mb-2 text-sm" data-i18n="how_to_play_title">🎮 조작 방법 (1인칭)</h3>
+                    <ul class="space-y-1.5 text-neutral-300">
+                        <li><strong class="text-white">W, A, S, D / 방향키:</strong> <span data-i18n="ctrl_move">이동 (터치 패드 지원)</span></li>
+                        <li><strong class="text-white">마우스 / 화면 드래그:</strong> <span data-i18n="ctrl_look">1인칭 시점 회전</span></li>
+                        <li><strong class="text-white">F / 우클릭:</strong> <span data-i18n="ctrl_light">손전등 켜기 / 끄기</span></li>
+                        <li><strong class="text-white">Shift:</strong> <span data-i18n="ctrl_sprint">달리기 (스태미나 소모)</span></li>
+                        <li><strong class="text-white">E / 클릭:</strong> <span data-i18n="ctrl_interact">테이프·배터리 줍기 / 탈출</span></li>
+                        <li><strong class="text-white">Q:</strong> <span data-i18n="ctrl_hint">시청자에게 위치 힌트 요청</span></li>
+                    </ul>
+                </div>
+                <div class="bg-white/5 border border-white/10 rounded-xl p-3.5">
+                    <h3 class="font-bold text-red-400 mb-2 text-sm" data-i18n="survival_tips_title">⚠️ 생존 수칙</h3>
+                    <ul class="space-y-1.5 text-neutral-300">
+                        <li data-i18n="tip_1">• 괴물은 불빛과 달리는 발소리에 민감하게 반응하여 더 빠르게 쫓아옵니다.</li>
+                        <li data-i18n="tip_2">• 형광등이 격렬하게 깜빡이고 심장박동이 빨라지면 즉시 손전등을 끄고 숨으세요.</li>
+                        <li data-i18n="tip_3">• 상단 레이더와 신호 감지기(SIGNAL)가 테이프와 출구 방향을 알려줍니다.</li>
+                        <li data-i18n="tip_4">• 시청자 슈퍼챗 후원이 터지면 배터리와 스태미나가 회복됩니다!</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Start Button -->
+            <button onclick="startGame()" class="w-full py-4 rounded-xl bg-gradient-to-r from-red-600 via-amber-600 to-yellow-600 hover:from-red-500 hover:to-yellow-500 text-white font-black text-lg tracking-wider shadow-[0_0_30px_rgba(220,38,38,0.5)] active:scale-[0.99] transition flex items-center justify-center gap-3">
+                <span class="w-3 h-3 rounded-full bg-white rec-dot"></span>
+                <span data-i18n="start_stream_btn">🔴 실시간 라이브 방송 시작하기 (START STREAM)</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- PAUSE / SETTINGS MODAL -->
+    <div id="pause-screen" class="fixed inset-0 z-30 hidden items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+        <div class="max-w-md w-full bg-neutral-900 border border-white/20 rounded-2xl p-6 text-center shadow-2xl">
+            <h2 class="text-2xl font-black text-yellow-400 mb-2" data-i18n="pause_title">STREAM PAUSED</h2>
+            <p class="text-xs text-neutral-400 mb-5" data-i18n="pause_subtitle">시청자들이 당신이 돌아오기를 기다리고 있습니다...</p>
+            
+            <div class="flex justify-center gap-2 mb-6">
+                <button onclick="setLanguage('ko')" class="lang-btn px-3 py-1.5 rounded text-xs font-bold transition" data-lang="ko">한국어</button>
+                <button onclick="setLanguage('ja')" class="lang-btn px-3 py-1.5 rounded text-xs font-bold transition" data-lang="ja">日本語</button>
+                <button onclick="setLanguage('en')" class="lang-btn px-3 py-1.5 rounded text-xs font-bold transition" data-lang="en">English</button>
+            </div>
+
+            <div class="space-y-2.5">
+                <button onclick="resumeGame()" class="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 font-bold text-white transition" data-i18n="resume_btn">
+                    방송 재개하기 (RESUME)
+                </button>
+                <button onclick="restartGame()" class="w-full py-3 rounded-xl bg-white/10 hover:bg-white/20 font-bold text-neutral-200 transition" data-i18n="restart_btn">
+                    처음부터 다시 시작 (RESTART)
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- GAME OVER MODAL (Caught by Monster) -->
+    <div id="gameover-screen" class="fixed inset-0 z-40 hidden items-center justify-center p-4 bg-red-950/85 backdrop-blur-md">
+        <div class="max-w-lg w-full bg-black/95 border-2 border-red-600 rounded-2xl p-6 sm:p-8 text-center shadow-[0_0_90px_rgba(220,38,38,0.65)]">
+            <div class="inline-block px-3 py-1 rounded bg-red-600 text-white text-xs font-black tracking-widest uppercase mb-3">
+                SIGNAL LOST // ERR_ENTITY_01
+            </div>
+            <h2 class="text-4xl sm:text-5xl font-black text-red-500 tracking-tight mb-2" data-i18n="gameover_title">
+                방송 연결이 끊어졌습니다
+            </h2>
+            <p class="text-sm text-neutral-300 mb-6" data-i18n="gameover_desc">
+                정체불명의 백룸 괴물에게 붙잡혔습니다. 카메라가 파손되었으며 생사가 확인되지 않습니다.
+            </p>
+
+            <!-- Stream Stats Summary -->
+            <div class="grid grid-cols-3 gap-2 bg-red-950/40 border border-red-500/30 rounded-xl p-3.5 mb-6 text-xs">
+                <div>
+                    <div class="text-neutral-400" data-i18n="stat_time">생존 시간</div>
+                    <div id="go-time" class="text-lg font-mono font-bold text-white mt-0.5">00:00</div>
+                </div>
+                <div>
+                    <div class="text-neutral-400" data-i18n="stat_viewers">최고 시청자</div>
+                    <div id="go-viewers" class="text-lg font-mono font-bold text-red-400 mt-0.5">0</div>
+                </div>
+                <div>
+                    <div class="text-neutral-400" data-i18n="stat_tapes">수집한 테이프</div>
+                    <div id="go-tapes" class="text-lg font-mono font-bold text-yellow-400 mt-0.5">0 / 4</div>
+                </div>
+            </div>
+
+            <button onclick="restartGame()" class="w-full py-4 rounded-xl bg-red-600 hover:bg-red-500 text-white font-black text-lg tracking-wider shadow-lg transition" data-i18n="retry_btn">
+                🔄 재접속하여 다시 도전하기 (RETRY STREAM)
+            </button>
+        </div>
+    </div>
+
+    <!-- VICTORY / ENDING MODAL (Escaped the Backrooms) -->
+    <div id="ending-screen" class="fixed inset-0 z-40 hidden items-center justify-center p-4 bg-emerald-950/85 backdrop-blur-md">
+        <div class="max-w-lg w-full bg-neutral-950 border-2 border-emerald-400 rounded-2xl p-6 sm:p-8 text-center shadow-[0_0_90px_rgba(16,185,129,0.5)]">
+            <div class="inline-block px-3 py-1 rounded bg-emerald-500 text-black text-xs font-black tracking-widest uppercase mb-3">
+                STREAM VIRAL #1 TRENDING // ESCAPED LEVEL 0
+            </div>
+            <h2 class="text-3xl sm:text-4xl font-black text-emerald-400 tracking-tight mb-2" data-i18n="ending_title">
+                백룸 탈출 성공! (SURVIVED)
+            </h2>
+            <p class="text-sm text-neutral-300 mb-6" data-i18n="ending_desc">
+                4개의 VHS 증거 테이프를 모두 회수하고 비상구(EXIT)를 통해 현실 세계로 생환했습니다! 당신의 라이브 방송은 전 세계 실시간 트렌드 1위를 기록했습니다!
+            </p>
+
+            <!-- Final Viral Stream Stats -->
+            <div class="grid grid-cols-3 gap-2 bg-emerald-950/40 border border-emerald-500/30 rounded-xl p-4 mb-6 text-xs">
+                <div>
+                    <div class="text-neutral-400" data-i18n="stat_time">탈출 기록</div>
+                    <div id="win-time" class="text-lg font-mono font-bold text-white mt-0.5">00:00</div>
+                </div>
+                <div>
+                    <div class="text-neutral-400" data-i18n="stat_viewers">최고 시청자</div>
+                    <div id="win-viewers" class="text-lg font-mono font-bold text-emerald-400 mt-0.5">0</div>
+                </div>
+                <div>
+                    <div class="text-neutral-400" data-i18n="stat_donations">총 후원금</div>
+                    <div id="win-donations" class="text-lg font-mono font-bold text-amber-400 mt-0.5">$0</div>
+                </div>
+            </div>
+
+            <button onclick="restartGame()" class="w-full py-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-black text-lg tracking-wider shadow-lg transition" data-i18n="play_again_btn">
+                🎥 새로운 방송 시작하기 (PLAY AGAIN)
+            </button>
+        </div>
+    </div>
+
+    <script>
+    /********************************************************************
+     * 1. MULTI-LANGUAGE LOCALIZATION (KOREAN / JAPANESE / ENGLISH)
+     ********************************************************************/
+    let currentLang = 'ko';
+
+    const I18N = {
+        ko: {
+            live_badge: "실시간 LIVE",
+            hud_tapes: "VHS 테이프:",
+            hud_signal: "신호 강도:",
+            warning_entity: "괴물 접근 중! 도망치거나 불을 끄세요!",
+            radar_label: "신호 탐지기",
+            click_to_lock: "화면 클릭: 마우스 시점 고정 | [F] 손전등 | [Shift] 달리기 | [Q] 시청자 힌트",
+            hud_battery: "손전등 배터리",
+            battery_recharge_hint: "끄면 자가발전으로 조금씩 충전됩니다",
+            hud_stamina: "스태미나",
+            btn_light: "손전등(F)",
+            btn_hint: "힌트(Q)",
+            btn_use: "줍기(E)",
+            chat_header: "실시간 시청자 채팅",
+            ask_chat_placeholder: "시청자들에게 방향 물어보기...",
+            title_tag: "1인칭 리얼타임 스트리밍 백룸 호러",
+            game_title: "백룸: 라이브 스트림",
+            game_desc: "당신은 공포 체험 스트리머입니다. 촬영 도중 현실의 틈새(No-clip)로 추락해 끝없는 노란 벽지와 축축한 카펫, 윙윙거리는 형광등의 미로 「백룸 Level 0」에 갇혔습니다. 실시간 시청자들의 채팅과 후원에 의지해 정체불명의 괴물을 피해 4개의 VHS 테이프를 찾아 비상구로 탈출하세요.",
+            how_to_play_title: "🎮 조작 방법 (1인칭)",
+            ctrl_move: "이동 (모바일 터치 지원)",
+            ctrl_look: "1인칭 시점 회전",
+            ctrl_light: "손전등 켜기 / 끄기",
+            ctrl_sprint: "달리기 (스태미나 소모)",
+            ctrl_interact: "테이프·배터리 줍기 / 탈출",
+            ctrl_hint: "시청자에게 위치 힌트 요청",
+            survival_tips_title: "⚠️ 백룸 생존 수칙",
+            tip_1: "• 괴물은 손전등 불빛과 달리는 발소리를 감지해 더 무섭게 추격해옵니다.",
+            tip_2: "• 천장 형광등이 붉게 깜빡이고 심장소리가 커지면 손전등을 끄고 모퉁이로 숨으세요.",
+            tip_3: "• 상단 레이더의 노란 점(테이프)과 초록 점(비상구)을 따라 이동하세요.",
+            tip_4: "• 시청자 슈퍼챗 후원이 터지면 배터리와 스태미나가 즉시 회복됩니다!",
+            start_stream_btn: "🔴 실시간 라이브 방송 시작하기",
+            pause_title: "방송 일시정지",
+            pause_subtitle: "시청자들이 당신의 생환을 기다리고 있습니다...",
+            resume_btn: "방송 재개하기 (RESUME)",
+            restart_btn: "처음부터 다시 시작 (RESTART)",
+            gameover_title: "방송 연결이 끊어졌습니다",
+            gameover_desc: "정체불명의 백룸 괴물에게 붙잡혔습니다. 카메라가 파손되었으며 스트리머의 생사가 확인되지 않습니다.",
+            stat_time: "생존 시간",
+            stat_viewers: "최고 시청자",
+            stat_tapes: "회수한 테이프",
+            stat_donations: "총 후원금",
+            retry_btn: "🔄 재접속하여 다시 도전하기",
+            ending_title: "백룸 탈출 성공! (SURVIVED)",
+            ending_desc: "4개의 VHS 테이프를 모두 회수하고 비상구(EXIT)를 통해 현실 세계로 생환했습니다! 당신의 탈출 생방송은 전 세계 트렌드 1위를 기록했습니다!",
+            play_again_btn: "🎥 새로운 방송 시작하기",
+            prompt_tape: "[E] VHS 테이프 회수하기",
+            prompt_battery: "[E] 예비 배터리 줍기 (+45%)",
+            prompt_exit_locked: "잠김! VHS 테이프를 먼저 모두 찾으세요",
+            prompt_exit_open: "[E] 비상구(EXIT)를 열고 백룸 탈출하기!",
+            chat_usernames: ["밤샘러_99", "백룸연구가", "공포매니아", "치킨먹는중", "방구석탐험대", "도망쳐진짜", "김미스테리", "새벽시청자", "고양이집사", "생존왕77"],
+            chat_normal: [
+                "여기 진짜 그 백룸 사진이랑 똑같네 소름;;",
+                "벽지 무늬랑 밑에 콘센트 디테일 봐 진짜 백룸임?",
+                "형광등 윙윙거리는 소리 때문에 귀 아파요 ㅠㅠ",
+                "카펫 축축한 냄새가 화면 뚫고 나오는 것 같음",
+                "위쪽 레이더 보면서 노란색 신호 쪽으로 가봐요!",
+                "주작 아니죠?? 분위기가 너무 음산한데...",
+                "바닥에 배터리 같은 것도 있으니까 잘 봐요!",
+                "방금 저 멀리 복도 끝에 검은 그림자 지나간 것 같은데 기분 탓인가"
+            ],
+            chat_dark: [
+                "불 끄니까 진짜 아무것도 안 보여요 ㄷㄷ",
+                "배터리 아끼려고 끈 거죠? 무서워 죽겠네",
+                "어두울 때 괴물이 덜 발견하긴 한대요 조심해요!",
+                "손전등 켜줘요 숨막혀요 ㅠㅠㅠ",
+                "자가발전 충전 중... 제발 괴물 오지 마라"
+            ],
+            chat_chase: [
+                "야야야 뒤에!!!!! 뛰어!!!!!!!!",
+                "미친 저게 뭐야?!?! 괴물 진짜 크다 ㄷㄷㄷ",
+                "달려!!!! SHIFT 눌러서 전력질주해요!!!",
+                "형광등 깜빡거리는 거 봐 바로 뒤에 있어요!!",
+                "코너 돌고 손전등 끄면 따돌릴 수 있을지도 몰라요!!",
+                "심장 터질 것 같아 살려줘 ㅠㅠㅠㅠ",
+                "화면에 노이즈 낀다 가까워졌어 도망쳐요!!"
+            ],
+            chat_tape: [
+                "오오 VHS 테이프 찾았다!! 나이스!!",
+                "레전드 진짜 찾았네 ㅋㅋㅋ 조금만 더 모으자!",
+                "테이프 주우니까 괴물이 기척을 느낀 것 같아요 조심!",
+                "대박 이제 탈출 희망이 보인다!!"
+            ],
+            chat_exit_ready: [
+                "테이프 4개 다 모았다!! 이제 초록색 EXIT 문으로 가요!!",
+                "레이더에 초록색 비상구 찍혔어요! 어서 탈출합시다!!",
+                "괴물한테 잡히기 전에 비상구로 전력질주!!"
+            ],
+            chat_hint_prefix: "📡 [시청자 제보] ",
+            chat_hint_dirs: {
+                front: "바로 정면 방향에서 신호가 잡혀요! 직진해봐요!",
+                back: "지금 보는 방향의 정반대(뒤쪽)에 목표가 있어요!",
+                left: "왼쪽 복도 방향에서 강한 신호가 잡힙니다!",
+                right: "오른쪽 방향으로 꺾어서 들어가 보세요!"
+            },
+            superchats: [
+                { user: "백룸후원회장", amount: 50, msg: "배터리랑 스태미나 충전하세요!! 꼭 살아남으세요!!" },
+                { user: "공포게임고인물", amount: 30, msg: "괴물 쫓아올 때 코너 돌고 불 끄세요! 화이팅!" },
+                { user: "익명의구원자", amount: 100, msg: "역대급 레전드 방송이네 ㄷㄷ 탈출 기원합니다!!" }
+            ]
+        },
+        ja: {
+            live_badge: "LIVE配信中",
+            hud_tapes: "VHSテープ:",
+            hud_signal: "信号強度:",
+            warning_entity: "怪物が接近中！走るかライトを消して！",
+            radar_label: "信号レーダー",
+            click_to_lock: "画面クリック: 視点固定 | [F] ライト | [Shift] ダッシュ | [Q] 視聴者ヒント",
+            hud_battery: "懐中電灯バッテリー",
+            battery_recharge_hint: "OFFにすると自家発電で少しずつ回復します",
+            hud_stamina: "スタミナ",
+            btn_light: "ライト(F)",
+            btn_hint: "ヒント(Q)",
+            btn_use: "調べる(E)",
+            chat_header: "リアルタイム視聴者チャット",
+            ask_chat_placeholder: "視聴者に方向を聞く...",
+            title_tag: "1人称リアルタイム配信バックルームホラー",
+            game_title: "BACKROOMS: LIVE STREAM",
+            game_desc: "あなたは心霊配信者です。配信中に床をすり抜け（Noclip）、果てしない黄色い壁紙と湿ったカーペット、唸る蛍光灯の迷宮「The Backrooms Level 0」に迷い込みました。視聴者のコメントとスパチャを頼りに、迫りくる怪物をかわして4本のVHSテープを集め、非常口から脱出してください。",
+            how_to_play_title: "🎮 操作方法 (1人称視点)",
+            ctrl_move: "移動 (タッチ操作対応)",
+            ctrl_look: "視点移動 (マウス / ドラッグ)",
+            ctrl_light: "懐中電灯 ON / OFF",
+            ctrl_sprint: "ダッシュ (スタミナ消費)",
+            ctrl_interact: "テープ・電池を拾う / 脱出",
+            ctrl_hint: "視聴者にヒントを聞く",
+            survival_tips_title: "⚠️ 生存ルール",
+            tip_1: "• 怪物は懐中電灯の光やダッシュの足音に反応して猛スピードで追いかけてきます。",
+            tip_2: "• 蛍光灯が激しく点滅し心音が速くなったら、ライトを消して曲がり角に隠れましょう。",
+            tip_3: "• 上部レーダーの黄色い点（テープ）と緑の点（非常口）を頼りに進んでください。",
+            tip_4: "• 視聴者のスーパーチャットが届くとバッテリーとスタミナが回復します！",
+            start_stream_btn: "🔴 ライブ配信を開始する (START STREAM)",
+            pause_title: "配信一時停止中",
+            pause_subtitle: "視聴者があなたの生還を待っています...",
+            resume_btn: "配信を再開する (RESUME)",
+            restart_btn: "最初からやり直す (RESTART)",
+            gameover_title: "配信が切断されました",
+            gameover_desc: "正体不明のバックルームの怪物に捕まりました。カメラは破壊され、配信者の安否は不明です。",
+            stat_time: "生存時間",
+            stat_viewers: "最大同接数",
+            stat_tapes: "回収テープ",
+            stat_donations: "スパチャ総額",
+            retry_btn: "🔄 再接続してリトライする",
+            ending_title: "バックルーム脱出成功！ (SURVIVED)",
+            ending_desc: "4本のVHSテープをすべて回収し、非常口(EXIT)から現実世界へ生還しました！あなたの配信は世界トレンド1位を記録しました！",
+            play_again_btn: "🎥 新しい配信を始める",
+            prompt_tape: "[E] VHSテープを回収する",
+            prompt_battery: "[E] 予備バッテリーを拾う (+45%)",
+            prompt_exit_locked: "ロック中！先にVHSテープを4本集めてください",
+            prompt_exit_open: "[E] 非常口(EXIT)を開けて脱出する！",
+            chat_usernames: ["夜更かし民", "バックルーム考察班", "ホラー好き", "名無しさん774", "ガチ勢ニキ", "逃げてええ", "都市伝説マニア", "深夜リスナー", "猫好き", "サバイバー99"],
+            chat_normal: [
+                "うわ、あの有名なバックルームの写真そのまんまじゃん…",
+                "壁紙の矢印っぽい模様とコンセントの再現度ヤバい",
+                "蛍光灯のブーンって音がリアルで不気味すぎる",
+                "湿ったカーペットの匂いがしてきそう…",
+                "上のレーダー見ながら黄色い反応の方へ行ってみよう！",
+                "これガチ配信？？雰囲気が怖すぎるんだけど",
+                "床にバッテリー落ちてることもあるからよく見て！",
+                "今奥の廊下に黒い影いなかった！？気のせい？"
+            ],
+            chat_dark: [
+                "ライト消すと真っ暗で何も見えないwww",
+                "充電のために消してるんだよね？怖すぎる…",
+                "暗い方が怪物に見つかりにくいらしいよ！",
+                "心臓に悪いから早くライトつけてー！！",
+                "自家発電中…頼むから今来ないでくれ"
+            ],
+            chat_chase: [
+                "後ろ！！！！逃げてええええ！！！！",
+                "ヤバいって！！何あの細長い化け物！？！？",
+                "走れ！！SHIFTキーで全力ダッシュして！！",
+                "照明が点滅してる！！すぐ近くにいるよ！！",
+                "角を曲がってライトを消せば撒けるかも！！",
+                "画面のノイズがひどい！！追いつかれる！！",
+                "心音ヤバいって！！早く逃げて！！"
+            ],
+            chat_tape: [
+                "おおお！VHSテープ発見ナイスぅ！！",
+                "神回収！！あと少しで脱出できるぞ！",
+                "テープ取った音で怪物が気づいたかも、気をつけて！",
+                "マジで生きて帰れそう！頑張れ！！"
+            ],
+            chat_exit_ready: [
+                "テープ4本揃った！！緑色のEXITドアへ急げ！！",
+                "レーダーに緑色の非常口が出てるよ！脱出だ！！",
+                "化け物に捕まる前に非常口へダッシュ！！"
+            ],
+            chat_hint_prefix: "📡 [リスナー情報] ",
+            chat_hint_dirs: {
+                front: "すぐ正面の方角から強い反応があるよ！真っ直ぐ進んで！",
+                back: "今向いてる方向の真後ろに目標があるっぽい！",
+                left: "左側の通路の方から強い信号が出てるよ！",
+                right: "右の方向へ曲がって進んでみて！"
+            },
+            superchats: [
+                { user: "バックルーム支援部隊", amount: 50, msg: "バッテリーとスタミナ補充して！！絶対生きて帰って！！" },
+                { user: "ホラゲーRTA勢", amount: 30, msg: "追われたら角を曲がってライトOFF！応援してるぞ！" },
+                { user: "謎の富豪リスナー", amount: 100, msg: "伝説の神配信すぎる…脱出成功を祈ってます！！" }
+            ]
+        },
+        en: {
+            live_badge: "LIVE",
+            hud_tapes: "VHS TAPES:",
+            hud_signal: "SIGNAL:",
+            warning_entity: "ENTITY APPROACHING! RUN OR KILL THE LIGHT!",
+            radar_label: "SIGNAL FINDER",
+            click_to_lock: "Click: Lock Mouse | [F] Flashlight | [Shift] Sprint | [Q] Ask Chat",
+            hud_battery: "FLASHLIGHT",
+            battery_recharge_hint: "Recharges slowly via dynamo when turned OFF",
+            hud_stamina: "STAMINA",
+            btn_light: "Light(F)",
+            btn_hint: "Hint(Q)",
+            btn_use: "Use(E)",
+            chat_header: "LIVE STREAM CHAT",
+            ask_chat_placeholder: "Ask viewers for directions...",
+            title_tag: "1ST-PERSON FOUND FOOTAGE & LIVE STREAM HORROR",
+            game_title: "BACKROOMS: LIVE STREAM",
+            game_desc: "You are an urban exploration livestreamer who noclipped through reality into 'The Backrooms Level 0' — an endless maze of mono-yellow wallpaper, damp carpet, and buzzing fluorescent lights. Rely on your live viewers and SuperChats to evade the terrifying Entity, recover 4 lost VHS Tapes, and reach the EXIT door.",
+            how_to_play_title: "🎮 CONTROLS (1st-Person)",
+            ctrl_move: "Move (Touch D-Pad supported)",
+            ctrl_look: "Look around (Mouse / Drag)",
+            ctrl_light: "Toggle Flashlight ON / OFF",
+            ctrl_sprint: "Sprint (Consumes Stamina)",
+            ctrl_interact: "Pick up Tape / Battery / Exit",
+            ctrl_hint: "Ask Viewers for Radar Hint",
+            survival_tips_title: "⚠️ SURVIVAL RULES",
+            tip_1: "• The Entity is drawn to your flashlight beam and loud sprinting footsteps.",
+            tip_2: "• When lights flicker violently and your heartbeat races, turn OFF your light and break line of sight.",
+            tip_3: "• Follow the top Radar: Yellow dots are VHS Tapes, Green dot is the EXIT.",
+            tip_4: "• Viewer SuperChat donations instantly restore your Battery & Stamina!",
+            start_stream_btn: "🔴 START LIVE STREAM",
+            pause_title: "STREAM PAUSED",
+            pause_subtitle: "Your viewers are waiting for you to come back...",
+            resume_btn: "RESUME STREAM",
+            restart_btn: "RESTART STREAM",
+            gameover_title: "CONNECTION LOST",
+            gameover_desc: "You were caught by the Backrooms Entity. Your camera feed shattered and the stream went offline permanently.",
+            stat_time: "SURVIVAL TIME",
+            stat_viewers: "PEAK VIEWERS",
+            stat_tapes: "TAPES FOUND",
+            stat_donations: "SUPERCHATS",
+            retry_btn: "🔄 RECONNECT & RETRY STREAM",
+            ending_title: "ESCAPED THE BACKROOMS!",
+            ending_desc: "You recovered all 4 VHS Tapes and escaped through the EXIT door back into reality! Your livestream just hit #1 Trending worldwide!",
+            play_again_btn: "🎥 START NEW STREAM",
+            prompt_tape: "[E] Collect Lost VHS Tape",
+            prompt_battery: "[E] Pick up Battery Pack (+45%)",
+            prompt_exit_locked: "LOCKED! Collect all 4 VHS Tapes first",
+            prompt_exit_open: "[E] Open EXIT Door & Escape!",
+            chat_usernames: ["NightOwl_99", "BackroomsLore", "SpookyVibes", "NoClipper", "ShadowWatcher", "RunBroRun", "VHS_Collector", "LiminalFan", "GlitchHunter", "PixelSurvivor"],
+            chat_normal: [
+                "Wait this looks EXACTLY like the original Backrooms photo!!",
+                "Look at the chevron wallpaper and power outlets... chills",
+                "That 60Hz fluorescent light hum is giving me a headache lol",
+                "I can literally smell the damp carpet through the stream",
+                "Check the top radar! Head toward the yellow signal!",
+                "Is this real or staged?? The atmosphere is insane",
+                "Keep an eye out for batteries on the carpet!",
+                "Did anyone else just see a tall black shadow down that hall?!"
+            ],
+            chat_dark: [
+                "Bro turned the light off I can't see a thing 😭",
+                "Smart move saving battery, stay quiet!!",
+                "The entity has a harder time spotting you in the dark!",
+                "Turn the flashlight back on pls my anxiety is peaking",
+                "Cranking that emergency battery... don't make a sound"
+            ],
+            chat_chase: [
+                "BEHIND YOUUUUUU!!! RUNNNNNN!!!!",
+                "WTF IS THAT THING?!?! IT'S HUGE!!",
+                "HOLD SHIFT TO SPRINT!! GO GO GO!!",
+                "THE LIGHTS ARE FLICKERING IT'S RIGHT ON YOU!!",
+                "TURN CORNERS AND KILL YOUR FLASHLIGHT TO LOSE IT!!",
+                "MY HEART IS POUNDING SO HARD RN",
+                "THE CAMERA STATIC IS GOING CRAZY RUN!!"
+            ],
+            chat_tape: [
+                "LETS GOOO!! Found a VHS tape!!",
+                "Huge clutch!! Just a few more tapes to unlock the exit!",
+                "Careful, picking up tapes might alert the Entity!",
+                "W streamer actually surviving the Backrooms!!"
+            ],
+            chat_exit_ready: [
+                "ALL 4 TAPES COLLECTED!! FIND THE GREEN EXIT DOOR!!",
+                "The green EXIT beacon is on the radar! GO NOW!!",
+                "SPRINT TO THE EXIT BEFORE IT CATCHES YOU!!"
+            ],
+            chat_hint_prefix: "📡 [CHAT RADAR] ",
+            chat_hint_dirs: {
+                front: "Strong signal dead ahead! Keep going straight!",
+                back: "Turn around 180 degrees! The signal is behind you!",
+                left: "The signal is coming from the left hallway!",
+                right: "Turn right! Target signal is that way!"
+            },
+            superchats: [
+                { user: "LiminalWhale", amount: 50, msg: "Recharged your battery & stamina!! Survive this pls!!" },
+                { user: "Speedrunner_01", amount: 30, msg: "Break line of sight and turn off light when chased!" },
+                { user: "AnonymousDonor", amount: 100, msg: "Greatest livestream in history. Make it out alive!!" }
+            ]
+        }
+    };
+
+    function setLanguage(lang) {
+        if (!I18N[lang]) return;
+        currentLang = lang;
+        document.documentElement.lang = lang;
+
+        // Update active state on language buttons
+        document.querySelectorAll('.lang-btn').forEach(btn => {
+            if (btn.dataset.lang === lang) {
+                btn.className = "lang-btn px-2.5 py-1 rounded text-xs font-bold transition bg-yellow-400 text-black shadow";
+            } else {
+                btn.className = "lang-btn px-2.5 py-1 rounded text-xs font-bold transition bg-white/10 text-neutral-300 hover:bg-white/20";
+            }
+        });
+
+        // Update all static elements with data-i18n
+        document.querySelectorAll('[data-i18n]').forEach(el => {
+            const key = el.getAttribute('data-i18n');
+            if (I18N[lang][key]) {
+                el.textContent = I18N[lang][key];
+            }
+        });
+    }
+
+    /********************************************************************
+     * 2. PROCEDURAL WEB AUDIO API SOUND ENGINE (NO EXTERNAL FILES)
+     ********************************************************************/
+    class BackroomsAudioEngine {
+        constructor() {
+            this.ctx = null;
+            this.isInitialized = false;
+            this.humGain = null;
+            this.monsterDroneGain = null;
+            this.monsterDroneOsc = null;
+            this.lastFootstepTime = 0;
+            this.lastHeartbeatTime = 0;
+        }
+
+        init() {
+            if (this.isInitialized) {
+                if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume();
+                return;
+            }
+            const AudioCtx = window.AudioContext || window.webkitAudioContext;
+            this.ctx = new AudioCtx();
+            this.isInitialized = true;
+
+            // 1. Continuous 60Hz + 120Hz Fluorescent Light Buzz/Hum
+            const osc60 = this.ctx.createOscillator();
+            const osc120 = this.ctx.createOscillator();
+            const humFilter = this.ctx.createBiquadFilter();
+            this.humGain = this.ctx.createGain();
+
+            osc60.type = 'sawtooth';
+            osc60.frequency.value = 60;
+            osc120.type = 'square';
+            osc120.frequency.value = 120;
+
+            humFilter.type = 'lowpass';
+            humFilter.frequency.value = 260;
+
+            this.humGain.gain.value = 0.035;
+
+            osc60.connect(humFilter);
+            osc120.connect(humFilter);
+            humFilter.connect(this.humGain);
+            this.humGain.connect(this.ctx.destination);
+
+            osc60.start();
+            osc120.start();
+
+            // 2. Monster Proximity Sub-Bass Drone
+            this.monsterDroneOsc = this.ctx.createOscillator();
+            const droneSub = this.ctx.createOscillator();
+            const droneFilter = this.ctx.createBiquadFilter();
+            this.monsterDroneGain = this.ctx.createGain();
+
+            this.monsterDroneOsc.type = 'sawtooth';
+            this.monsterDroneOsc.frequency.value = 46;
+            droneSub.type = 'sine';
+            droneSub.frequency.value = 23;
+
+            droneFilter.type = 'lowpass';
+            droneFilter.frequency.value = 140;
+
+            this.monsterDroneGain.gain.value = 0.0;
+
+            this.monsterDroneOsc.connect(droneFilter);
+            droneSub.connect(droneFilter);
+            droneFilter.connect(this.monsterDroneGain);
+            this.monsterDroneGain.connect(this.ctx.destination);
+
+            this.monsterDroneOsc.start();
+            droneSub.start();
+        }
+
+        updateAmbient(monsterDist, isChasing) {
+            if (!this.isInitialized || !this.ctx) return;
+            const now = this.ctx.currentTime;
+
+            // Modulate monster drone based on distance
+            const proximity = Math.max(0, 1 - monsterDist / 26);
+            const targetDrone = proximity * proximity * (isChasing ? 0.28 : 0.14);
+            this.monsterDroneGain.gain.setTargetAtTime(targetDrone, now, 0.1);
+            this.monsterDroneOsc.frequency.setTargetAtTime(42 + proximity * 28 + (isChasing ? Math.sin(now * 18) * 8 : 0), now, 0.1);
+        }
+
+        playFlashlightClick(isOn) {
+            if (!this.isInitialized) return;
+            const now = this.ctx.currentTime;
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(isOn ? 1400 : 950, now);
+            osc.frequency.exponentialRampToValueAtTime(isOn ? 2200 : 420, now + 0.045);
+
+            gain.gain.setValueAtTime(0.18, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+            osc.start(now);
+            osc.stop(now + 0.055);
+        }
+
+        playFootstep(isSprinting) {
+            if (!this.isInitialized) return;
+            const now = this.ctx.currentTime;
+            // Damp carpet footstep: filtered noise burst + low thud
+            const bufferSize = this.ctx.sampleRate * 0.09;
+            const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+            const data = buffer.getChannelData(0);
+            for (let i = 0; i < bufferSize; i++) {
+                data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.35));
+            }
+
+            const noise = this.ctx.createBufferSource();
+            noise.buffer = buffer;
+
+            const filter = this.ctx.createBiquadFilter();
+            filter.type = 'bandpass';
+            filter.frequency.value = isSprinting ? 320 : 220;
+            filter.Q.value = 1.2;
+
+            const gain = this.ctx.createGain();
+            gain.gain.setValueAtTime(isSprinting ? 0.16 : 0.08, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.09);
+
+            noise.connect(filter);
+            filter.connect(gain);
+            gain.connect(this.ctx.destination);
+            noise.start(now);
+        }
+
+        playMonsterStep(dist) {
+            if (!this.isInitialized || dist > 28) return;
+            const now = this.ctx.currentTime;
+            const vol = Math.max(0.01, (1 - dist / 28) * 0.35);
+
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(95, now);
+            osc.frequency.exponentialRampToValueAtTime(28, now + 0.16);
+
+            gain.gain.setValueAtTime(vol, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+            osc.start(now);
+            osc.stop(now + 0.19);
+        }
+
+        playHeartbeat(intensity) {
+            if (!this.isInitialized) return;
+            const now = this.ctx.currentTime;
+            const vol = Math.min(0.35, 0.08 + intensity * 0.25);
+
+            const playBeat = (delay, pitch) => {
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(pitch, now + delay);
+                osc.frequency.exponentialRampToValueAtTime(24, now + delay + 0.12);
+
+                gain.gain.setValueAtTime(vol, now + delay);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + delay + 0.14);
+
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start(now + delay);
+                osc.stop(now + delay + 0.15);
+            };
+
+            playBeat(0, 65);
+            playBeat(0.16, 52);
+        }
+
+        playMonsterScreech() {
+            if (!this.isInitialized) return;
+            const now = this.ctx.currentTime;
+            // Terrifying metallic discordant Bacteria screech
+            const freqs = [310, 465, 620, 890, 1240];
+            freqs.forEach((f, idx) => {
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = idx % 2 === 0 ? 'sawtooth' : 'square';
+                osc.frequency.setValueAtTime(f, now);
+                osc.frequency.exponentialRampToValueAtTime(f * (0.7 + Math.random() * 0.6), now + 0.75);
+
+                gain.gain.setValueAtTime(0.06, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.8);
+
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start(now);
+                osc.stop(now + 0.82);
+            });
+        }
+
+        playJumpscareScream() {
+            if (!this.isInitialized) return;
+            const now = this.ctx.currentTime;
+            // Intense discordant roar + static burst
+            const freqs = [110, 174, 233, 540, 780, 1120, 1650];
+            freqs.forEach((f) => {
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(f, now);
+                osc.frequency.linearRampToValueAtTime(f * 1.35, now + 0.3);
+                osc.frequency.exponentialRampToValueAtTime(f * 0.4, now + 1.4);
+
+                gain.gain.setValueAtTime(0.09, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 1.45);
+
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start(now);
+                osc.stop(now + 1.5);
+            });
+        }
+
+        playPickupSound(isTape) {
+            if (!this.isInitialized) return;
+            const now = this.ctx.currentTime;
+            const notes = isTape ? [523.25, 659.25, 783.99, 1046.5] : [440, 660];
+            notes.forEach((freq, i) => {
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(freq, now + i * 0.07);
+                gain.gain.setValueAtTime(0.12, now + i * 0.07);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.07 + 0.22);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start(now + i * 0.07);
+                osc.stop(now + i * 0.07 + 0.24);
+            });
+        }
+
+        playSuperchatChime() {
+            if (!this.isInitialized) return;
+            const now = this.ctx.currentTime;
+            [587.33, 880, 1174.66].forEach((freq, i) => {
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(freq, now + i * 0.08);
+                gain.gain.setValueAtTime(0.11, now + i * 0.08);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.08 + 0.35);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start(now + i * 0.08);
+                osc.stop(now + i * 0.08 + 0.36);
+            });
+        }
+    }
+
+    const audio = new BackroomsAudioEngine();
+
+    /********************************************************************
+     * 3. PROCEDURAL BACKROOMS LEVEL 0 TEXTURES (MATCHING PHOTO)
+     ********************************************************************/
+    function createBackroomsWallTexture(withOutlet = false) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 512;
+        canvas.height = 512;
+        const ctx = canvas.getContext('2d');
+
+        // Base vintage yellow-beige gradient matching the uploaded photo
+        const grad = ctx.createLinearGradient(0, 0, 0, 512);
+        grad.addColorStop(0, '#c6bd73');
+        grad.addColorStop(0.5, '#d2c980');
+        grad.addColorStop(0.92, '#bfb569');
+        grad.addColorStop(1, '#9d934e');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, 512, 512);
+
+        // Subtle damp age stains & noise
+        for (let i = 0; i < 1600; i++) {
+            const x = Math.random() * 512;
+            const y = Math.random() * 512;
+            ctx.fillStyle = Math.random() > 0.5 ? 'rgba(130, 118, 52, 0.06)' : 'rgba(245, 240, 190, 0.05)';
+            ctx.fillRect(x, y, 3, 3);
+        }
+
+        // Iconic vertical stripes & chevron/arrow-like wallpaper motif from the reference image
+        const cols = 8;
+        const colW = 512 / cols;
+        ctx.strokeStyle = 'rgba(115, 106, 48, 0.42)';
+        ctx.fillStyle = 'rgba(115, 106, 48, 0.32)';
+
+        for (let c = 0; c < cols; c++) {
+            const cx = c * colW + colW * 0.5;
+
+            // Double vertical dashed guide lines
+            ctx.lineWidth = 1.5;
+            for (let y = 0; y < 485; y += 14) {
+                ctx.beginPath();
+                ctx.moveTo(cx - 14, y);
+                ctx.lineTo(cx - 14, y + 8);
+                ctx.moveTo(cx + 14, y);
+                ctx.lineTo(cx + 14, y + 8);
+                ctx.stroke();
+            }
+
+            // Repeating upward chevron / leaf pattern inside each column
+            for (let y = 16; y < 480; y += 36) {
+                ctx.lineWidth = 2.2;
+                ctx.beginPath();
+                ctx.moveTo(cx - 9, y + 12);
+                ctx.lineTo(cx, y);
+                ctx.lineTo(cx + 9, y + 12);
+                ctx.stroke();
+
+                ctx.beginPath();
+                ctx.moveTo(cx - 6, y + 20);
+                ctx.lineTo(cx, y + 11);
+                ctx.lineTo(cx + 6, y + 20);
+                ctx.stroke();
+
+                // Center dot
+                ctx.beginPath();
+                ctx.arc(cx, y + 26, 1.8, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        // Bottom wooden/olive trim baseboard matching the photo
+        ctx.fillStyle = '#7e7437';
+        ctx.fillRect(0, 486, 512, 26);
+        ctx.fillStyle = '#5c5424';
+        ctx.fillRect(0, 484, 512, 3);
+
+        // Optional realistic electrical wall outlet (like the lower-right foreground wall in the photo!)
+        if (withOutlet) {
+            const ox = 236, oy = 395, ow = 36, oh = 54;
+            ctx.fillStyle = '#b9b179';
+            ctx.fillRect(ox, oy, ow, oh);
+            ctx.strokeStyle = '#6e6638';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(ox, oy, ow, oh);
+
+            // Two outlet sockets
+            [oy + 15, oy + 37].forEach(sy => {
+                ctx.fillStyle = '#3a3519';
+                ctx.fillRect(ox + 10, sy - 5, 3, 9);
+                ctx.fillRect(ox + 22, sy - 5, 3, 9);
+                ctx.beginPath();
+                ctx.arc(ox + 17.5, sy + 6, 2.2, 0, Math.PI * 2);
+                ctx.fill();
+            });
+        }
+
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.wrapS = THREE.RepeatWrapping;
+        texture.wrapT = THREE.ClampToEdgeWrapping;
+        return texture;
+    }
+
+    function createCarpetTexture() {
+        const canvas = document.createElement('canvas');
+        canvas.width = 256;
+        canvas.height = 256;
+        const ctx = canvas.getContext('2d');
+
+        // Damp tan/brownish-gold carpet from the photo
+        ctx.fillStyle = '#9b8756';
+        ctx.fillRect(0, 0, 256, 256);
+
+        for (let i = 0; i < 6500; i++) {
+            const x = Math.random() * 256;
+            const y = Math.random() * 256;
+            ctx.fillStyle = Math.random() > 0.5 ? 'rgba(72, 60, 32, 0.16)' : 'rgba(185, 166, 112, 0.14)';
+            ctx.fillRect(x, y, 2, 2);
+        }
+
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.wrapS = THREE.RepeatWrapping;
+        texture.wrapT = THREE.RepeatWrapping;
+        texture.repeat.set(22, 22);
+        return texture;
+    }
+
+    function createCeilingTexture() {
+        const canvas = document.createElement('canvas');
+        canvas.width = 256;
+        canvas.height = 256;
+        const ctx = canvas.getContext('2d');
+
+        ctx.fillStyle = '#8b8559';
+        ctx.fillRect(0, 0, 256, 256);
+
+        // Acoustic ceiling tile grid
+        ctx.strokeStyle = '#635e3c';
+        ctx.lineWidth = 4;
+        ctx.strokeRect(0, 0, 128, 256);
+        ctx.strokeRect(128, 0, 128, 256);
+        ctx.strokeRect(0, 0, 256, 128);
+
+        for (let i = 0; i < 2000; i++) {
+            ctx.fillStyle = 'rgba(45, 42, 24, 0.12)';
+            ctx.fillRect(Math.random() * 256, Math.random() * 256, 2, 2);
+        }
+
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.wrapS = THREE.RepeatWrapping;
+        texture.wrapT = THREE.RepeatWrapping;
+        texture.repeat.set(20, 20);
+        return texture;
+    }
+
+    /********************************************************************
+     * 4. THREE.JS SCENE, LEVEL 0 ARCHITECTURAL LAYOUT & LIGHTING
+     ********************************************************************/
+    const CELL_SIZE = 5.0;
+    const WALL_HEIGHT = 3.7;
+    const MAP_SIZE = 15;
+
+    // 1 = Wall, 0 = Open Carpet Floor (Designed with wide open partitioned spaces like the photo!)
+    const LEVEL_MAP = [
+        [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+        [1,0,0,0,1,0,0,0,0,0,1,0,0,0,1],
+        [1,0,0,0,0,0,1,1,0,0,0,0,1,0,1],
+        [1,0,1,0,0,0,0,0,0,1,0,0,1,0,1],
+        [1,0,1,1,0,1,0,0,0,1,0,1,1,0,1],
+        [1,0,0,0,0,1,0,0,0,0,0,0,0,0,1],
+        [1,1,0,1,0,0,0,1,0,0,1,1,0,1,1],
+        [1,0,0,1,0,0,0,0,0,0,0,1,0,0,1],
+        [1,0,0,0,0,1,1,0,1,0,0,0,0,0,1],
+        [1,0,1,0,0,0,0,0,1,0,1,1,0,0,1],
+        [1,0,1,1,0,1,0,0,0,0,0,0,0,1,1],
+        [1,0,0,0,0,1,0,1,1,0,1,0,0,0,1],
+        [1,0,1,0,0,0,0,0,0,0,1,0,1,0,1],
+        [1,0,0,0,1,0,0,0,1,0,0,0,0,0,1],
+        [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+    ];
+
+    let scene, camera, renderer;
+    let flashlight, flashlightHalo, ambientLight;
+    let wallBoxes = [];
+    let ceilingLights = [];
+    let tapeItems = [];
+    let batteryItems = [];
+    let exitDoorObj = null;
+    let monsterObj = null;
+
+    // Player & Game State
+    const player = {
+        pos: new THREE.Vector3(CELL_SIZE * 1.5, 1.72, CELL_SIZE * 1.5),
+        yaw: -Math.PI * 0.25,
+        pitch: 0,
+        radius: 0.45,
+        speedWalk: 3.7,
+        speedSprint: 6.3,
+        stamina: 100,
+        battery: 100,
+        flashlightOn: true,
+        tapesCollected: 0,
+        totalTapes: 4,
+        bobPhase: 0,
+        isMoving: false,
+        isSprinting: false
+    };
+
+    const monster = {
+        pos: new THREE.Vector3(CELL_SIZE * 11.5, 0, CELL_SIZE * 11.5),
+        yaw: 0,
+        state: 'PATROL', // PATROL, INVESTIGATE, CHASE
+        targetPos: new THREE.Vector3(CELL_SIZE * 11.5, 0, CELL_SIZE * 7.5),
+        speedPatrol: 2.35,
+        speedChase: 5.15,
+        alertTimer: 0,
+        animPhase: 0,
+        lastStepSound: 0,
+        screechCooldown: 0,
+        limbs: {}
+    };
+
+    let gameState = 'TITLE'; // TITLE, PLAYING, PAUSED, JUMPSCARE, GAMEOVER, ENDING
+    let streamSeconds = 0;
+    let viewerCount = 142;
+    let peakViewers = 142;
+    let totalDonations = 0;
+    let lastChatTime = 0;
+    let lastSuperchatTime = 0;
+    let jumpscareTimer = 0;
+
+    // Input State
+    const keys = { w: false, a: false, s: false, d: false, shift: false };
+    let isPointerLocked = false;
+    let isDraggingLook = false;
+    let prevMouse = { x: 0, y: 0 };
+
+    function gridToWorld(gx, gz) {
+        return new THREE.Vector3((gx + 0.5) * CELL_SIZE, 0, (gz + 0.5) * CELL_SIZE);
+    }
+
+    function worldToGrid(x, z) {
+        return {
+            gx: Math.floor(x / CELL_SIZE),
+            gz: Math.floor(z / CELL_SIZE)
+        };
+    }
+
+    function isWallAtGrid(gx, gz) {
+        if (gx < 0 || gz < 0 || gx >= MAP_SIZE || gz >= MAP_SIZE) return true;
+        return LEVEL_MAP[gz][gx] === 1;
+    }
+
+    function initThreeScene() {
+        const canvas = document.getElementById('game-canvas');
+        renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.shadowMap.enabled = false;
+
+        scene = new THREE.Scene();
+        // Dense dark yellow-black fog so distant halls fade into oppressive darkness
+        scene.background = new THREE.Color(0x060603);
+        scene.fog = new THREE.FogExp2(0x080703, 0.115);
+
+        camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, 0.1, 45);
+        scene.add(camera);
+
+        // Very dim ambient light so turning off the flashlight is genuinely dark & tense
+        ambientLight = new THREE.AmbientLight(0x332f19, 0.22);
+        scene.add(ambientLight);
+
+        // Player Flashlight (Realistic Dual-Cone SpotLight attached to Camera)
+        flashlight = new THREE.SpotLight(0xfff8dc, 2.9, 25, Math.PI / 5.2, 0.48, 1.5);
+        flashlight.position.set(0.18, -0.12, 0);
+        flashlight.target.position.set(0, 0, -6);
+        camera.add(flashlight);
+        camera.add(flashlight.target);
+
+        // Wide peripheral spill from flashlight
+        flashlightHalo = new THREE.SpotLight(0xd9c87a, 0.85, 13, Math.PI / 2.6, 0.85, 1.8);
+        flashlightHalo.position.set(0, 0, 0);
+        flashlightHalo.target.position.set(0, 0, -5);
+        camera.add(flashlightHalo);
+        camera.add(flashlightHalo.target);
+
+        buildBackroomsLevel();
+        buildMonsterEntity();
+        spawnItemsAndExit();
+
+        window.addEventListener('resize', onWindowResize);
+    }
+
+    function buildBackroomsLevel() {
+        const wallTexPlain = createBackroomsWallTexture(false);
+        const wallTexOutlet = createBackroomsWallTexture(true);
+        const carpetTex = createCarpetTexture();
+        const ceilingTex = createCeilingTexture();
+
+        const wallMatPlain = new THREE.MeshLambertMaterial({ map: wallTexPlain });
+        const wallMatOutlet = new THREE.MeshLambertMaterial({ map: wallTexOutlet });
+        const floorMat = new THREE.MeshLambertMaterial({ map: carpetTex });
+        const ceilingMat = new THREE.MeshLambertMaterial({ map: ceilingTex });
+
+        // Floor & Ceiling across the whole Level 0 grid
+        const totalSize = MAP_SIZE * CELL_SIZE;
+        const floorGeo = new THREE.PlaneGeometry(totalSize, totalSize, 30, 30);
+        const floorMesh = new THREE.Mesh(floorGeo, floorMat);
+        floorMesh.rotation.x = -Math.PI / 2;
+        floorMesh.position.set(totalSize / 2, 0, totalSize / 2);
+        scene.add(floorMesh);
+
+        const ceilMesh = new THREE.Mesh(floorGeo, ceilingMat);
+        ceilMesh.rotation.x = Math.PI / 2;
+        ceilMesh.position.set(totalSize / 2, WALL_HEIGHT, totalSize / 2);
+        scene.add(ceilMesh);
+
+        // Build Walls & Ceiling Fluorescent Light Panels
+        const wallGeo = new THREE.BoxGeometry(CELL_SIZE, WALL_HEIGHT, CELL_SIZE);
+        wallBoxes = [];
+        ceilingLights = [];
+
+        for (let gz = 0; gz < MAP_SIZE; gz++) {
+            for (let gx = 0; gx < MAP_SIZE; gx++) {
+                const wx = (gx + 0.5) * CELL_SIZE;
+                const wz = (gz + 0.5) * CELL_SIZE;
+
+                if (LEVEL_MAP[gz][gx] === 1) {
+                    const useOutlet = ((gx + gz * 3) % 4 === 0);
+                    const wallMesh = new THREE.Mesh(wallGeo, useOutlet ? wallMatOutlet : wallMatPlain);
+                    wallMesh.position.set(wx, WALL_HEIGHT / 2, wz);
+                    scene.add(wallMesh);
+
+                    wallBoxes.push({
+                        minX: wx - CELL_SIZE / 2,
+                        maxX: wx + CELL_SIZE / 2,
+                        minZ: wz - CELL_SIZE / 2,
+                        maxZ: wz + CELL_SIZE / 2
+                    });
+                } else {
+                    // Add rectangular ceiling fluorescent light fixture in open areas
+                    if ((gx + gz) % 2 === 0) {
+                        const isWorking = ((gx * 7 + gz * 13) % 5 !== 0); // Some fixtures are dead for dark atmosphere
+                        const isFlickering = ((gx * 3 + gz * 5) % 4 === 0);
+
+                        const panelGeo = new THREE.BoxGeometry(1.7, 0.08, 0.65);
+                        const panelMat = new THREE.MeshBasicMaterial({
+                            color: isWorking ? 0xfffce0 : 0x262418
+                        });
+                        const panelMesh = new THREE.Mesh(panelGeo, panelMat);
+                        panelMesh.position.set(wx, WALL_HEIGHT - 0.04, wz);
+                        scene.add(panelMesh);
+
+                        let pointLight = null;
+                        if (isWorking && ((gx + gz) % 4 === 0)) {
+                            pointLight = new THREE.PointLight(0xebe09e, 0.58, 9.5, 2.0);
+                            pointLight.position.set(wx, WALL_HEIGHT - 0.35, wz);
+                            scene.add(pointLight);
+                        }
+
+                        ceilingLights.push({
+                            mesh: panelMesh,
+                            light: pointLight,
+                            wx,
+                            wz,
+                            isWorking,
+                            isFlickering,
+                            baseIntensity: pointLight ? 0.58 : 0
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    /********************************************************************
+     * 5. SCARY 3D PROCEDURAL MONSTER ("THE BACTERIA / SHADOW ENTITY")
+     ********************************************************************/
+    function buildMonsterEntity() {
+        const group = new THREE.Group();
+
+        const darkWireMat = new THREE.MeshLambertMaterial({
+            color: 0x090909,
+            emissive: 0x050000
+        });
+        const eyeMat = new THREE.MeshBasicMaterial({ color: 0xff1e1e });
+
+        // Elongated twisted torso
+        const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.09, 1.65, 7), darkWireMat);
+        torso.position.y = 1.95;
+        group.add(torso);
+
+        // Crooked rib-like wire rings around torso
+        for (let i = 0; i < 4; i++) {
+            const rib = new THREE.Mesh(new THREE.TorusGeometry(0.22 - i * 0.02, 0.035, 6, 10), darkWireMat);
+            rib.position.y = 1.55 + i * 0.25;
+            rib.rotation.x = Math.PI / 2 + (i - 1.5) * 0.25;
+            group.add(rib);
+        }
+
+        // Distorted camera-frame / geometric head with hollow glowing eyes
+        const headGroup = new THREE.Group();
+        headGroup.position.set(0, 2.92, 0.08);
+
+        const skull = new THREE.Mesh(new THREE.DodecahedronGeometry(0.28, 0), darkWireMat);
+        skull.scale.set(0.85, 1.35, 0.95);
+        headGroup.add(skull);
+
+        const leftEye = new THREE.Mesh(new THREE.SphereGeometry(0.048, 8, 8), eyeMat);
+        leftEye.position.set(-0.09, 0.05, 0.23);
+        const rightEye = new THREE.Mesh(new THREE.SphereGeometry(0.038, 8, 8), eyeMat);
+        rightEye.position.set(0.1, -0.02, 0.23);
+        headGroup.add(leftEye);
+        headGroup.add(rightEye);
+
+        // Unhinged jaw wire
+        const jaw = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.24, 0.12), darkWireMat);
+        jaw.position.set(0, -0.22, 0.12);
+        headGroup.add(jaw);
+
+        group.add(headGroup);
+
+        // Long spindly articulated arms & legs
+        const makeLimb = (len, rad) => {
+            const limbGroup = new THREE.Group();
+            const mesh = new THREE.Mesh(new THREE.CylinderGeometry(rad, rad * 0.6, len, 6), darkWireMat);
+            mesh.position.y = -len / 2;
+            limbGroup.add(mesh);
+            return limbGroup;
+        };
+
+        const leftArm = makeLimb(1.55, 0.065);
+        leftArm.position.set(-0.34, 2.62, 0);
+        const rightArm = makeLimb(1.65, 0.065);
+        rightArm.position.set(0.34, 2.62, 0);
+
+        const leftLeg = makeLimb(1.35, 0.08);
+        leftLeg.position.set(-0.18, 1.25, 0);
+        const rightLeg = makeLimb(1.35, 0.08);
+        rightLeg.position.set(0.18, 1.25, 0);
+
+        group.add(leftArm, rightArm, leftLeg, rightLeg);
+
+        // Eerie red aura light emitted by the monster
+        const auraLight = new THREE.PointLight(0xff1100, 0.9, 6.5, 2);
+        auraLight.position.set(0, 2.5, 0.3);
+        group.add(auraLight);
+
+        monster.limbs = { headGroup, leftArm, rightArm, leftLeg, rightLeg, auraLight };
+        monsterObj = group;
+        scene.add(monsterObj);
+    }
+
+    /********************************************************************
+     * 6. COLLECTIBLES (VHS TAPES, BATTERIES) & GLOWING EXIT DOOR
+     ********************************************************************/
+    function spawnItemsAndExit() {
+        // Clear existing items if restarting
+        tapeItems.forEach(t => scene.remove(t.group));
+        batteryItems.forEach(b => scene.remove(b.group));
+        if (exitDoorObj) scene.remove(exitDoorObj.group);
+
+        tapeItems = [];
+        batteryItems = [];
+
+        // 4 VHS Tape Grid Locations across the maze
+        const tapeCoords = [
+            { gx: 1, gz: 12 },
+            { gx: 7, gz: 2 },
+            { gx: 13, gz: 3 },
+            { gx: 12, gz: 12 }
+        ];
+
+        tapeCoords.forEach((coord, idx) => {
+            const wPos = gridToWorld(coord.gx, coord.gz);
+            const group = new THREE.Group();
+            group.position.set(wPos.x, 0.45, wPos.z);
+
+            // VHS Cassette Mesh
+            const body = new THREE.Mesh(
+                new THREE.BoxGeometry(0.46, 0.09, 0.28),
+                new THREE.MeshLambertMaterial({ color: 0x171717, emissive: 0x221a00 })
+            );
+            const label = new THREE.Mesh(
+                new THREE.BoxGeometry(0.28, 0.095, 0.14),
+                new THREE.MeshBasicMaterial({ color: 0xfacc15 })
+            );
+            group.add(body, label);
+
+            // Subtle golden beacon light so it's visible in the dark
+            const light = new THREE.PointLight(0xfacc15, 0.95, 4.5, 2);
+            light.position.set(0, 0.35, 0);
+            group.add(light);
+
+            scene.add(group);
+            tapeItems.push({ group, collected: false, id: idx });
+        });
+
+        // 4 Spare Battery Packs scattered in the maze
+        const batteryCoords = [
+            { gx: 4, gz: 5 },
+            { gx: 9, gz: 7 },
+            { gx: 3, gz: 9 },
+            { gx: 10, gz: 11 }
+        ];
+
+        batteryCoords.forEach((coord) => {
+            const wPos = gridToWorld(coord.gx, coord.gz);
+            const group = new THREE.Group();
+            group.position.set(wPos.x, 0.3, wPos.z);
+
+            const cyl = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.11, 0.11, 0.32, 12),
+                new THREE.MeshBasicMaterial({ color: 0x38bdf8 })
+            );
+            cyl.rotation.z = Math.PI / 4;
+            group.add(cyl);
+
+            scene.add(group);
+            batteryItems.push({ group, collected: false });
+        });
+
+        // Glowing Green EXIT Door at far end of Level 0 (gx: 13, gz: 13)
+        const exitW = gridToWorld(13, 13);
+        const exitGroup = new THREE.Group();
+        exitGroup.position.set(exitW.x, 0, exitW.z);
+
+        const doorMesh = new THREE.Mesh(
+            new THREE.BoxGeometry(1.5, 2.65, 0.18),
+            new THREE.MeshLambertMaterial({ color: 0x064e3b, emissive: 0x022c22 })
+        );
+        doorMesh.position.y = 1.325;
+        exitGroup.add(doorMesh);
+
+        // Glowing "EXIT" sign above door
+        const signMesh = new THREE.Mesh(
+            new THREE.BoxGeometry(0.85, 0.32, 0.22),
+            new THREE.MeshBasicMaterial({ color: 0x10b981 })
+        );
+        signMesh.position.y = 2.95;
+        exitGroup.add(signMesh);
+
+        const exitLight = new THREE.PointLight(0x10b981, 1.3, 8, 2);
+        exitLight.position.set(0, 2.7, 0.5);
+        exitGroup.add(exitLight);
+
+        scene.add(exitGroup);
+        exitDoorObj = { group: exitGroup, pos: exitW, signMesh, exitLight };
+    }
+
+    /********************************************************************
+     * 7. COLLISION DETECTION & LINE OF SIGHT
+     ********************************************************************/
+    function checkWallCollision(x, z, radius) {
+        for (let i = 0; i < wallBoxes.length; i++) {
+            const b = wallBoxes[i];
+            const closestX = Math.max(b.minX, Math.min(x, b.maxX));
+            const closestZ = Math.max(b.minZ, Math.min(z, b.maxZ));
+            const dx = x - closestX;
+            const dz = z - closestZ;
+            if (dx * dx + dz * dz < radius * radius) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    function hasLineOfSight(posA, posB) {
+        const dx = posB.x - posA.x;
+        const dz = posB.z - posA.z;
+        const dist = Math.hypot(dx, dz);
+        const steps = Math.ceil(dist / 0.6);
+        for (let i = 1; i < steps; i++) {
+            const t = i / steps;
+            const sx = posA.x + dx * t;
+            const sz = posA.z + dz * t;
+            const { gx, gz } = worldToGrid(sx, sz);
+            if (isWallAtGrid(gx, gz)) return false;
+        }
+        return true;
+    }
+
+    /********************************************************************
+     * 8. REAL-TIME LIVE STREAM CHAT & SUPERCHAT SYSTEM
+     ********************************************************************/
+    function addChatMessage(customText = null, isSystem = false) {
+        const chatBox = document.getElementById('chat-messages');
+        if (!chatBox) return;
+
+        const dict = I18N[currentLang];
+        const msgDiv = document.createElement('div');
+        msgDiv.className = 'chat-msg break-words';
+
+        if (isSystem && customText) {
+            msgDiv.innerHTML = `<span class="font-bold text-emerald-400">${customText}</span>`;
+        } else {
+            const user = dict.chat_usernames[Math.floor(Math.random() * dict.chat_usernames.length)];
+            const colors = ['text-amber-300', 'text-sky-300', 'text-pink-300', 'text-emerald-300', 'text-purple-300'];
+            const uColor = colors[Math.floor(Math.random() * colors.length)];
+
+            let pool = dict.chat_normal;
+            if (monster.state === 'CHASE') {
+                pool = dict.chat_chase;
+            } else if (!player.flashlightOn || player.battery < 20) {
+                pool = dict.chat_dark;
+            } else if (player.tapesCollected >= player.totalTapes) {
+                pool = dict.chat_exit_ready;
+            }
+
+            const text = customText || pool[Math.floor(Math.random() * pool.length)];
+            msgDiv.innerHTML = `<span class="font-bold ${uColor}">${user}:</span> <span class="text-neutral-100">${text}</span>`;
+        }
+
+        chatBox.appendChild(msgDiv);
+        while (chatBox.children.length > 28) {
+            chatBox.removeChild(chatBox.firstChild);
+        }
+        chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    function triggerSuperChat() {
+        const dict = I18N[currentLang];
+        const sc = dict.superchats[Math.floor(Math.random() * dict.superchats.length)];
+        totalDonations += sc.amount;
+        document.getElementById('donation-total').textContent = totalDonations;
+
+        // Boost player battery & stamina!
+        player.battery = Math.min(100, player.battery + 30);
+        player.stamina = Math.min(100, player.stamina + 45);
+        audio.playSuperchatChime();
+
+        const container = document.getElementById('superchat-container');
+        container.innerHTML = `
+            <div class="superchat-anim bg-gradient-to-r from-amber-500/90 to-red-600/90 border border-yellow-200 rounded-lg p-2.5 text-xs shadow-lg mb-1">
+                <div class="flex justify-between font-black text-white">
+                    <span>💖 ${sc.user}</span>
+                    <span>$${sc.amount}.00</span>
+                </div>
+                <div class="text-yellow-100 mt-0.5 font-medium">${sc.msg}</div>
+            </div>
+        `;
+    }
+
+    function askChatHint() {
+        if (gameState !== 'PLAYING') return;
+        const target = getNearestObjectivePos();
+        if (!target) return;
+
+        // Calculate relative angle from player's camera forward vector to the target
+        const forwardX = -Math.sin(player.yaw);
+        const forwardZ = -Math.cos(player.yaw);
+        const toTargetX = target.x - player.pos.x;
+        const toTargetZ = target.z - player.pos.z;
+        const len = Math.hypot(toTargetX, toTargetZ) || 1;
+        const nx = toTargetX / len;
+        const nz = toTargetZ / len;
+
+        const dot = forwardX * nx + forwardZ * nz;
+        const cross = forwardX * nz - forwardZ * nx;
+
+        const dict = I18N[currentLang];
+        let dirKey = 'front';
+        if (dot > 0.45) dirKey = 'front';
+        else if (dot < -0.45) dirKey = 'back';
+        else if (cross > 0) dirKey = 'right';
+        else dirKey = 'left';
+
+        addChatMessage(dict.chat_hint_prefix + dict.chat_hint_dirs[dirKey], true);
+        audio.playPickupSound(false);
+    }
+
+    function getNearestObjectivePos() {
+        if (player.tapesCollected >= player.totalTapes) {
+            return exitDoorObj ? exitDoorObj.pos : null;
+        }
+        let bestPos = null;
+        let bestDist = Infinity;
+        tapeItems.forEach(t => {
+            if (!t.collected) {
+                const d = Math.hypot(t.group.position.x - player.pos.x, t.group.position.z - player.pos.z);
+                if (d < bestDist) {
+                    bestDist = d;
+                    bestPos = t.group.position;
+                }
+            }
+        });
+        return bestPos;
+    }
+
+    /********************************************************************
+     * 9. MONSTER AI & ENVIRONMENT REACTION
+     ********************************************************************/
+    function pickRandomOpenNeighbor(gx, gz) {
+        const dirs = [
+            { dx: 1, dz: 0 },
+            { dx: -1, dz: 0 },
+            { dx: 0, dz: 1 },
+            { dx: 0, dz: -1 }
+        ];
+        const valid = dirs.filter(d => !isWallAtGrid(gx + d.dx, gz + d.dz));
+        if (valid.length === 0) return gridToWorld(gx, gz);
+        const pick = valid[Math.floor(Math.random() * valid.length)];
+        return gridToWorld(gx + pick.dx, gz + pick.dz);
+    }
+
+    function updateMonsterAI(dt, nowSec) {
+        const dx = player.pos.x - monster.pos.x;
+        const dz = player.pos.z - monster.pos.z;
+        const distToPlayer = Math.hypot(dx, dz);
+
+        // Detection range depends on whether player's flashlight is ON and whether player is sprinting
+        let detectRadius = 7.5;
+        if (player.flashlightOn) detectRadius += 5.5;
+        if (player.isSprinting) detectRadius += 5.0;
+
+        const canSeePlayer = distToPlayer < detectRadius && hasLineOfSight(monster.pos, player.pos);
+
+        if (canSeePlayer) {
+            if (monster.state !== 'CHASE') {
+                monster.state = 'CHASE';
+                if (nowSec - monster.screechCooldown > 5.0) {
+                    audio.playMonsterScreech();
+                    monster.screechCooldown = nowSec;
+                    addChatMessage();
+                }
+            }
+            monster.targetPos.set(player.pos.x, 0, player.pos.z);
+            monster.alertTimer = 4.5; // Remembers player briefly around corners
+        } else if (monster.state === 'CHASE') {
+            monster.alertTimer -= dt;
+            if (monster.alertTimer <= 0) {
+                monster.state = 'PATROL';
+                const { gx, gz } = worldToGrid(monster.pos.x, monster.pos.z);
+                monster.targetPos.copy(pickRandomOpenNeighbor(gx, gz));
+            }
+        } else {
+            // If player sprints nearby, monster investigates
+            if (player.isSprinting && distToPlayer < 16) {
+                monster.targetPos.set(player.pos.x, 0, player.pos.z);
+            }
+        }
+
+        // Move monster toward targetPos
+        const tx = monster.targetPos.x - monster.pos.x;
+        const tz = monster.targetPos.z - monster.pos.z;
+        const distToTarget = Math.hypot(tx, tz);
+
+        if (distToTarget < 0.45) {
+            const { gx, gz } = worldToGrid(monster.pos.x, monster.pos.z);
+            // Bias patrol vaguely toward player's quadrant so tension stays high
+            if (Math.random() < 0.35 && distToPlayer > 18) {
+                const stepX = Math.sign(player.pos.x - monster.pos.x);
+                const stepZ = Math.sign(player.pos.z - monster.pos.z);
+                if (!isWallAtGrid(gx + stepX, gz)) {
+                    monster.targetPos.copy(gridToWorld(gx + stepX, gz));
+                } else if (!isWallAtGrid(gx, gz + stepZ)) {
+                    monster.targetPos.copy(gridToWorld(gx, gz + stepZ));
+                } else {
+                    monster.targetPos.copy(pickRandomOpenNeighbor(gx, gz));
+                }
+            } else {
+                monster.targetPos.copy(pickRandomOpenNeighbor(gx, gz));
+            }
+        } else {
+            const moveSpeed = monster.state === 'CHASE' ? monster.speedChase : monster.speedPatrol;
+            const vx = (tx / distToTarget) * moveSpeed * dt;
+            const vz = (tz / distToTarget) * moveSpeed * dt;
+
+            if (!checkWallCollision(monster.pos.x + vx, monster.pos.z, 0.38)) {
+                monster.pos.x += vx;
+            }
+            if (!checkWallCollision(monster.pos.x, monster.pos.z + vz, 0.38)) {
+                monster.pos.z += vz;
+            }
+            monster.yaw = Math.atan2(tx, tz);
+        }
+
+        // Update 3D Monster Mesh & Terrifying Twitching Limb Animation
+        monsterObj.position.set(monster.pos.x, 0, monster.pos.z);
+        monsterObj.rotation.y = monster.yaw;
+
+        const animSpeed = monster.state === 'CHASE' ? 15 : 6.5;
+        monster.animPhase += dt * animSpeed;
+
+        const { headGroup, leftArm, rightArm, leftLeg, rightLeg, auraLight } = monster.limbs;
+        leftLeg.rotation.x = Math.sin(monster.animPhase) * 0.75;
+        rightLeg.rotation.x = -Math.sin(monster.animPhase) * 0.75;
+
+        if (monster.state === 'CHASE') {
+            // Arms raised and flailing aggressively while chasing!
+            leftArm.rotation.x = -1.35 + Math.sin(monster.animPhase * 1.3) * 0.55;
+            rightArm.rotation.x = -1.35 + Math.cos(monster.animPhase * 1.3) * 0.55;
+            leftArm.rotation.z = 0.25;
+            rightArm.rotation.z = -0.25;
+            headGroup.rotation.z = Math.sin(nowSec * 24) * 0.38;
+            auraLight.intensity = 1.6;
+        } else {
+            leftArm.rotation.x = -Math.sin(monster.animPhase) * 0.45;
+            rightArm.rotation.x = Math.sin(monster.animPhase) * 0.45;
+            leftArm.rotation.z = 0.08;
+            rightArm.rotation.z = -0.08;
+            headGroup.rotation.z = Math.sin(nowSec * 7) * 0.15;
+            auraLight.intensity = 0.65;
+        }
+
+        // Monster Footstep Audio
+        const stepInterval = monster.state === 'CHASE' ? 0.28 : 0.55;
+        if (nowSec - monster.lastStepSound > stepInterval) {
+            audio.playMonsterStep(distToPlayer);
+            monster.lastStepSound = nowSec;
+        }
+
+        // Heartbeat & VHS Glitch Overlay when monster is close
+        const danger = Math.max(0, 1 - distToPlayer / 18);
+        const glitchLayer = document.getElementById('glitch-layer');
+        const vignette = document.getElementById('vignette');
+        const warningBanner = document.getElementById('entity-warning');
+
+        if (danger > 0.15 || monster.state === 'CHASE') {
+            const hbInterval = Math.max(0.32, 0.95 - danger * 0.65);
+            if (nowSec - audio.lastHeartbeatTime > hbInterval) {
+                audio.playHeartbeat(danger);
+                audio.lastHeartbeatTime = nowSec;
+            }
+            glitchLayer.style.opacity = Math.min(0.85, danger * 0.9 + (monster.state === 'CHASE' ? 0.25 : 0));
+            vignette.style.boxShadow = `inset 0 0 ${130 + danger * 90}px rgba(${Math.floor(140 * danger)}, 0, 0, 0.92)`;
+            warningBanner.classList.remove('hidden');
+            warningBanner.classList.add('flex');
+        } else {
+            glitchLayer.style.opacity = 0;
+            vignette.style.boxShadow = 'inset 0 0 120px rgba(0, 0, 0, 0.88)';
+            warningBanner.classList.add('hidden');
+            warningBanner.classList.remove('flex');
+        }
+
+        audio.updateAmbient(distToPlayer, monster.state === 'CHASE');
+
+        // Catch Player -> Trigger Terrifying Jumpscare!
+        if (distToPlayer < 1.25 && gameState === 'PLAYING') {
+            triggerJumpscare();
+        }
+    }
+
+    /********************************************************************
+     * 10. PLAYER MOVEMENT, FLASHLIGHT & INTERACTION
+     ********************************************************************/
+    function toggleFlashlight() {
+        if (gameState !== 'PLAYING') return;
+        if (!player.flashlightOn && player.battery <= 2) return;
+        player.flashlightOn = !player.flashlightOn;
+        audio.playFlashlightClick(player.flashlightOn);
+        updateFlashlightVisuals();
+    }
+
+    function updateFlashlightVisuals() {
+        const badge = document.getElementById('flashlight-state-badge');
+        if (player.flashlightOn && player.battery > 0) {
+            const flicker = player.battery < 15 ? (Math.random() > 0.25 ? 1 : 0.15) : 1;
+            flashlight.intensity = 2.9 * flicker;
+            flashlightHalo.intensity = 0.85 * flicker;
+            if (badge) {
+                badge.textContent = 'ON';
+                badge.className = 'ml-1 px-1.5 py-0.2 rounded text-[10px] bg-amber-400/25 text-amber-200';
+            }
+        } else {
+            flashlight.intensity = 0;
+            flashlightHalo.intensity = 0;
+            if (badge) {
+                badge.textContent = 'OFF';
+                badge.className = 'ml-1 px-1.5 py-0.2 rounded text-[10px] bg-neutral-700 text-neutral-400';
+            }
+        }
+    }
+
+    function interactAction() {
+        if (gameState !== 'PLAYING') return;
+
+        // Check VHS Tapes
+        for (let i = 0; i < tapeItems.length; i++) {
+            const t = tapeItems[i];
+            if (!t.collected) {
+                const d = Math.hypot(t.group.position.x - player.pos.x, t.group.position.z - player.pos.z);
+                if (d < 2.3) {
+                    t.collected = true;
+                    t.group.visible = false;
+                    player.tapesCollected++;
+                    document.getElementById('tape-counter').textContent = `${player.tapesCollected} / ${player.totalTapes}`;
+                    audio.playPickupSound(true);
+
+                    const dict = I18N[currentLang];
+                    addChatMessage(dict.chat_tape[Math.floor(Math.random() * dict.chat_tape.length)]);
+                    viewerCount += Math.floor(80 + Math.random() * 120);
+                    return;
+                }
+            }
+        }
+
+        // Check Batteries
+        for (let i = 0; i < batteryItems.length; i++) {
+            const b = batteryItems[i];
+            if (!b.collected) {
+                const d = Math.hypot(b.group.position.x - player.pos.x, b.group.position.z - player.pos.z);
+                if (d < 2.2) {
+                    b.collected = true;
+                    b.group.visible = false;
+                    player.battery = Math.min(100, player.battery + 45);
+                    audio.playPickupSound(false);
+                    return;
+                }
+            }
+        }
+
+        // Check EXIT Door
+        if (exitDoorObj) {
+            const d = Math.hypot(exitDoorObj.pos.x - player.pos.x, exitDoorObj.pos.z - player.pos.z);
+            if (d < 2.6) {
+                if (player.tapesCollected >= player.totalTapes) {
+                    triggerVictoryEnding();
+                } else {
+                    audio.playFlashlightClick(false);
+                }
+            }
+        }
+    }
+
+    function updatePlayer(dt, nowSec) {
+        // Movement Vector from WASD
+        let moveForward = (keys.w ? 1 : 0) - (keys.s ? 1 : 0);
+        let moveRight = (keys.d ? 1 : 0) - (keys.a ? 1 : 0);
+
+        const isMoving = (moveForward !== 0 || moveRight !== 0);
+        player.isMoving = isMoving;
+
+        // Sprinting & Stamina management
+        player.isSprinting = isMoving && keys.shift && player.stamina > 5;
+        if (player.isSprinting) {
+            player.stamina = Math.max(0, player.stamina - 22 * dt);
+        } else {
+            player.stamina = Math.min(100, player.stamina + 14 * dt);
+        }
+
+        // Flashlight Battery Drain / Emergency Hand-Crank Recharge when OFF
+        if (player.flashlightOn) {
+            player.battery = Math.max(0, player.battery - 2.1 * dt);
+            if (player.battery <= 0) {
+                player.flashlightOn = false;
+                audio.playFlashlightClick(false);
+            }
+        } else {
+            player.battery = Math.min(100, player.battery + 3.8 * dt);
+        }
+        updateFlashlightVisuals();
+
+        // Update Battery & Stamina HUD Bars
+        document.getElementById('battery-pct').textContent = `${Math.round(player.battery)}%`;
+        document.getElementById('battery-bar').style.width = `${player.battery}%`;
+        document.getElementById('stamina-pct').textContent = `${Math.round(player.stamina)}%`;
+        document.getElementById('stamina-bar').style.width = `${player.stamina}%`;
+
+        if (isMoving) {
+            const len = Math.hypot(moveForward, moveRight);
+            moveForward /= len;
+            moveRight /= len;
+
+            const speed = player.isSprinting ? player.speedSprint : player.speedWalk;
+            const forwardX = -Math.sin(player.yaw);
+            const forwardZ = -Math.cos(player.yaw);
+            const rightX = Math.cos(player.yaw);
+            const rightZ = -Math.sin(player.yaw);
+
+            const vx = (forwardX * moveForward + rightX * moveRight) * speed * dt;
+            const vz = (forwardZ * moveForward + rightZ * moveRight) * speed * dt;
+
+            if (!checkWallCollision(player.pos.x + vx, player.pos.z, player.radius)) {
+                player.pos.x += vx;
+            }
+            if (!checkWallCollision(player.pos.x, player.pos.z + vz, player.radius)) {
+                player.pos.z += vz;
+            }
+
+            // Camera head-bobbing + carpet footstep sounds
+            const bobFreq = player.isSprinting ? 13.5 : 8.5;
+            player.bobPhase += dt * bobFreq;
+            const stepInterval = player.isSprinting ? 0.31 : 0.48;
+            if (nowSec - audio.lastFootstepTime > stepInterval) {
+                audio.playFootstep(player.isSprinting);
+                audio.lastFootstepTime = nowSec;
+            }
+        } else {
+            player.bobPhase += dt * 1.8;
+        }
+
+        // Apply 1st-Person Camera Transform + Camcorder Head Bob
+        const bobOffsetY = isMoving ? Math.sin(player.bobPhase) * (player.isSprinting ? 0.085 : 0.045) : Math.sin(player.bobPhase) * 0.012;
+        const bobOffsetX = isMoving ? Math.cos(player.bobPhase * 0.5) * 0.03 : 0;
+
+        camera.position.set(player.pos.x + bobOffsetX, player.pos.y + bobOffsetY, player.pos.z);
+        camera.rotation.order = 'YXZ';
+        camera.rotation.y = player.yaw;
+        camera.rotation.x = player.pitch;
+
+        // Check nearby interactive items & update prompt
+        updateInteractionPrompt();
+    }
+
+    function updateInteractionPrompt() {
+        const promptEl = document.getElementById('interact-prompt');
+        const dict = I18N[currentLang];
+        let promptText = null;
+
+        for (let i = 0; i < tapeItems.length; i++) {
+            const t = tapeItems[i];
+            if (!t.collected) {
+                const d = Math.hypot(t.group.position.x - player.pos.x, t.group.position.z - player.pos.z);
+                if (d < 2.3) {
+                    promptText = dict.prompt_tape;
+                    break;
+                }
+            }
+        }
+
+        if (!promptText) {
+            for (let i = 0; i < batteryItems.length; i++) {
+                const b = batteryItems[i];
+                if (!b.collected) {
+                    const d = Math.hypot(b.group.position.x - player.pos.x, b.group.position.z - player.pos.z);
+                    if (d < 2.2) {
+                        promptText = dict.prompt_battery;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (!promptText && exitDoorObj) {
+            const d = Math.hypot(exitDoorObj.pos.x - player.pos.x, exitDoorObj.pos.z - player.pos.z);
+            if (d < 2.6) {
+                promptText = (player.tapesCollected >= player.totalTapes) ? dict.prompt_exit_open : dict.prompt_exit_locked;
+            }
+        }
+
+        if (promptText) {
+            promptEl.textContent = promptText;
+            promptEl.classList.remove('hidden');
+        } else {
+            promptEl.classList.add('hidden');
+        }
+    }
+
+    /********************************************************************
+     * 11. RADAR, SIGNAL STRENGTH & CEILING LIGHT FLICKERING
+     ********************************************************************/
+    function updateEnvironmentAndHUD(nowSec) {
+        // Animate collectible VHS Tapes & Batteries
+        tapeItems.forEach(t => {
+            if (!t.collected) {
+                t.group.rotation.y = nowSec * 1.8;
+                t.group.position.y = 0.42 + Math.sin(nowSec * 3 + t.id) * 0.08;
+            }
+        });
+        batteryItems.forEach(b => {
+            if (!b.collected) {
+                b.group.rotation.y = -nowSec * 2.2;
+            }
+        });
+
+        // Flicker ceiling lights (especially violently near the monster!)
+        ceilingLights.forEach(cl => {
+            if (!cl.isWorking) return;
+            const distToMonster = Math.hypot(cl.wx - monster.pos.x, cl.wz - monster.pos.z);
+            if (distToMonster < 9.5) {
+                const on = Math.random() > 0.45;
+                cl.mesh.material.color.setHex(on ? 0xff7755 : 0x1a0808);
+                if (cl.light) cl.light.intensity = on ? cl.baseIntensity * 1.2 : 0.05;
+            } else if (cl.isFlickering) {
+                const on = Math.sin(nowSec * 19 + cl.wx) > -0.75;
+                cl.mesh.material.color.setHex(on ? 0xfffce0 : 0x3a3620);
+                if (cl.light) cl.light.intensity = on ? cl.baseIntensity : 0.1;
+            } else {
+                cl.mesh.material.color.setHex(0xfffce0);
+                if (cl.light) cl.light.intensity = cl.baseIntensity;
+            }
+        });
+
+        // Update Signal Strength Detector Bar to nearest VHS Tape or Exit
+        const nearestObj = getNearestObjectivePos();
+        if (nearestObj) {
+            const dist = Math.hypot(nearestObj.x - player.pos.x, nearestObj.z - player.pos.z);
+            document.getElementById('signal-dist').textContent = `${Math.round(dist)}m`;
+            const bars = document.getElementById('signal-bars').children;
+            const level = dist < 10 ? 4 : dist < 20 ? 3 : dist < 32 ? 2 : 1;
+            for (let i = 0; i < 4; i++) {
+                bars[i].className = `w-1.5 rounded-sm ${i < level ? 'bg-emerald-400' : 'bg-emerald-400/25'}`;
+                bars[i].style.height = `${6 + i * 3}px`;
+            }
+        }
+
+        // Draw Top Mini Radar Canvas
+        const radar = document.getElementById('radar-canvas');
+        if (radar) {
+            const rCtx = radar.getContext('2d');
+            const w = radar.width, h = radar.height;
+            const cx = w / 2, cy = h / 2;
+            rCtx.clearRect(0, 0, w, h);
+
+            // Radar Rings
+            rCtx.strokeStyle = 'rgba(16, 185, 129, 0.28)';
+            rCtx.lineWidth = 1;
+            [18, 34, 46].forEach(r => {
+                rCtx.beginPath();
+                rCtx.arc(cx, cy, r, 0, Math.PI * 2);
+                rCtx.stroke();
+            });
+
+            // Helper to plot world position relative to player's facing direction
+            const plotPoint = (wx, wz, color, size) => {
+                const dx = wx - player.pos.x;
+                const dz = wz - player.pos.z;
+                const scale = 1.15;
+                // Rotate by player.yaw so 'Up' on radar is always player's forward view
+                const cos = Math.cos(-player.yaw);
+                const sin = Math.sin(-player.yaw);
+                const rx = (dx * cos - dz * sin) * scale;
+                const rz = (dx * sin + dz * cos) * scale;
+                const dist = Math.hypot(rx, rz);
+                const maxR = 42;
+                const clampedX = dist > maxR ? (rx / dist) * maxR : rx;
+                const clampedZ = dist > maxR ? (rz / dist) * maxR : rz;
+
+                rCtx.fillStyle = color;
+                rCtx.beginPath();
+                rCtx.arc(cx + clampedX, cy + clampedZ, size, 0, Math.PI * 2);
+                rCtx.fill();
+            };
+
+            // Plot uncollected VHS Tapes (Yellow)
+            tapeItems.forEach(t => {
+                if (!t.collected) plotPoint(t.group.position.x, t.group.position.z, '#facc15', 3.5);
+            });
+
+            // Plot Exit Door (Green)
+            if (exitDoorObj) {
+                plotPoint(exitDoorObj.pos.x, exitDoorObj.pos.z, '#10b981', player.tapesCollected >= player.totalTapes ? 5 : 3);
+            }
+
+            // Plot Monster if within radar interference range (Red blinking dot)
+            const mDist = Math.hypot(monster.pos.x - player.pos.x, monster.pos.z - player.pos.z);
+            if (mDist < 24 && Math.floor(nowSec * 6) % 2 === 0) {
+                plotPoint(monster.pos.x, monster.pos.z, '#ef4444', 4);
+            }
+
+            // Player Center Triangle
+            rCtx.fillStyle = '#ffffff';
+            rCtx.beginPath();
+            rCtx.moveTo(cx, cy - 4);
+            rCtx.lineTo(cx - 3.5, cy + 3.5);
+            rCtx.lineTo(cx + 3.5, cy + 3.5);
+            rCtx.closePath();
+            rCtx.fill();
+        }
+    }
+
+    /********************************************************************
+     * 12. JUMPSCARE, GAME OVER & VICTORY SEQUENCES
+     ********************************************************************/
+    function triggerJumpscare() {
+        gameState = 'JUMPSCARE';
+        jumpscareTimer = 1.35;
+        if (document.pointerLockElement) document.exitPointerLock();
+
+        audio.playJumpscareScream();
+
+        // Position monster right in front of the player's camera face
+        const forwardX = -Math.sin(player.yaw);
+        const forwardZ = -Math.cos(player.yaw);
+        monsterObj.position.set(player.pos.x + forwardX * 0.92, -0.85, player.pos.z + forwardZ * 0.92);
+        monsterObj.rotation.y = player.yaw + Math.PI;
+        flashlight.intensity = 4.5;
+
+        // Spam panicked live chat messages
+        for (let i = 0; i < 5; i++) {
+            setTimeout(() => addChatMessage(), i * 160);
+        }
+    }
+
+    function drawStaticNoise() {
+        const sc = document.getElementById('static-canvas');
+        sc.width = 240;
+        sc.height = 160;
+        const ctx = sc.getContext('2d');
+        const img = ctx.createImageData(240, 160);
+        for (let i = 0; i < img.data.length; i += 4) {
+            const v = Math.random() * 255;
+            img.data[i] = v;
+            img.data[i + 1] = v;
+            img.data[i + 2] = v;
+            img.data[i + 3] = 170;
+        }
+        ctx.putImageData(img, 0, 0);
+    }
+
+    function showGameOverModal() {
+        gameState = 'GAMEOVER';
+        document.getElementById('static-canvas').style.opacity = '0.35';
+        drawStaticNoise();
+
+        document.getElementById('go-time').textContent = formatTime(streamSeconds, false);
+        document.getElementById('go-viewers').textContent = peakViewers.toLocaleString();
+        document.getElementById('go-tapes').textContent = `${player.tapesCollected} / ${player.totalTapes}`;
+
+        document.getElementById('gameover-screen').classList.remove('hidden');
+        document.getElementById('gameover-screen').classList.add('flex');
+    }
+
+    function triggerVictoryEnding() {
+        gameState = 'ENDING';
+        if (document.pointerLockElement) document.exitPointerLock();
+        audio.playSuperchatChime();
+
+        peakViewers = Math.max(peakViewers, viewerCount + 4800);
+        totalDonations += 250;
+
+        document.getElementById('win-time').textContent = formatTime(streamSeconds, false);
+        document.getElementById('win-viewers').textContent = peakViewers.toLocaleString();
+        document.getElementById('win-donations').textContent = `$${totalDonations}`;
+
+        document.getElementById('ending-screen').classList.remove('hidden');
+        document.getElementById('ending-screen').classList.add('flex');
+    }
+
+    function formatTime(sec, includeHours = true) {
+        const s = Math.floor(sec % 60).toString().padStart(2, '0');
+        const m = Math.floor((sec / 60) % 60).toString().padStart(2, '0');
+        const h = Math.floor(sec / 3600).toString().padStart(2, '0');
+        return includeHours ? `${h}:${m}:${s}` : `${m}:${s}`;
+    }
+
+    /********************************************************************
+     * 13. GAME FLOW & INPUT EVENT LISTENERS
+     ********************************************************************/
+    function resetGameState() {
+        player.pos.set(CELL_SIZE * 1.5, 1.72, CELL_SIZE * 1.5);
+        player.yaw = -Math.PI * 0.25;
+        player.pitch = 0;
+        player.stamina = 100;
+        player.battery = 100;
+        player.flashlightOn = true;
+        player.tapesCollected = 0;
+
+        monster.pos.set(CELL_SIZE * 11.5, 0, CELL_SIZE * 11.5);
+        monster.targetPos.set(CELL_SIZE * 11.5, 0, CELL_SIZE * 7.5);
+        monster.state = 'PATROL';
+
+        streamSeconds = 0;
+        viewerCount = 142;
+        peakViewers = 142;
+        totalDonations = 0;
+
+        document.getElementById('tape-counter').textContent = `0 / ${player.totalTapes}`;
+        document.getElementById('donation-total').textContent = '0';
+        document.getElementById('chat-messages').innerHTML = '';
+        document.getElementById('static-canvas').style.opacity = '0';
+        document.getElementById('glitch-layer').style.opacity = '0';
+
+        spawnItemsAndExit();
+        updateFlashlightVisuals();
+    }
+
+    function startGame() {
+        audio.init();
+        resetGameState();
+        gameState = 'PLAYING';
+
+        document.getElementById('title-screen').classList.add('hidden');
+        document.getElementById('gameover-screen').classList.add('hidden');
+        document.getElementById('gameover-screen').classList.remove('flex');
+        document.getElementById('ending-screen').classList.add('hidden');
+        document.getElementById('ending-screen').classList.remove('flex');
+        document.getElementById('pause-screen').classList.add('hidden');
+        document.getElementById('pause-screen').classList.remove('flex');
+
+        document.getElementById('game-hud').classList.remove('hidden');
+        document.getElementById('crosshair-container').classList.remove('hidden');
+
+        addChatMessage();
+        requestCanvasPointerLock();
+    }
+
+    function restartGame() {
+        startGame();
+    }
+
+    function togglePauseMenu() {
+        if (gameState === 'PLAYING') {
+            gameState = 'PAUSED';
+            if (document.pointerLockElement) document.exitPointerLock();
+            document.getElementById('pause-screen').classList.remove('hidden');
+            document.getElementById('pause-screen').classList.add('flex');
+        } else if (gameState === 'PAUSED') {
+            resumeGame();
+        }
+    }
+
+    function resumeGame() {
+        gameState = 'PLAYING';
+        document.getElementById('pause-screen').classList.add('hidden');
+        document.getElementById('pause-screen').classList.remove('flex');
+        requestCanvasPointerLock();
+    }
+
+    function requestCanvasPointerLock() {
+        const canvas = document.getElementById('game-canvas');
+        try {
+            if (canvas.requestPointerLock) {
+                canvas.requestPointerLock();
+            }
+        } catch (e) {
+            // Fallback drag-to-look works automatically
+        }
+    }
+
+    function setupInputListeners() {
+        const canvas = document.getElementById('game-canvas');
+
+        document.addEventListener('pointerlockchange', () => {
+            isPointerLocked = (document.pointerLockElement === canvas);
+        });
+
+        canvas.addEventListener('mousedown', (e) => {
+            if (gameState !== 'PLAYING') return;
+            audio.init();
+            if (e.button === 2) {
+                toggleFlashlight();
+                return;
+            }
+            if (!isPointerLocked) {
+                requestCanvasPointerLock();
+                isDraggingLook = true;
+                prevMouse.x = e.clientX;
+                prevMouse.y = e.clientY;
+            } else {
+                interactAction();
+            }
+        });
+
+        window.addEventListener('mouseup', () => {
+            isDraggingLook = false;
+        });
+
+        window.addEventListener('contextmenu', (e) => e.preventDefault());
+
+        window.addEventListener('mousemove', (e) => {
+            if (gameState !== 'PLAYING') return;
+            const sensitivity = 0.0023;
+            if (isPointerLocked) {
+                player.yaw -= e.movementX * sensitivity;
+                player.pitch = Math.max(-1.35, Math.min(1.35, player.pitch - e.movementY * sensitivity));
+            } else if (isDraggingLook) {
+                const dx = e.clientX - prevMouse.x;
+                const dy = e.clientY - prevMouse.y;
+                prevMouse.x = e.clientX;
+                prevMouse.y = e.clientY;
+                player.yaw -= dx * sensitivity * 1.4;
+                player.pitch = Math.max(-1.35, Math.min(1.35, player.pitch - dy * sensitivity * 1.4));
+            }
+        });
+
+        // Touch Look Support on Canvas
+        let touchLookId = null;
+        canvas.addEventListener('touchstart', (e) => {
+            if (gameState !== 'PLAYING') return;
+            audio.init();
+            const t = e.changedTouches[0];
+            touchLookId = t.identifier;
+            prevMouse.x = t.clientX;
+            prevMouse.y = t.clientY;
+        }, { passive: true });
+
+        canvas.addEventListener('touchmove', (e) => {
+            if (gameState !== 'PLAYING') return;
+            for (let i = 0; i < e.changedTouches.length; i++) {
+                const t = e.changedTouches[i];
+                if (t.identifier === touchLookId) {
+                    const dx = t.clientX - prevMouse.x;
+                    const dy = t.clientY - prevMouse.y;
+                    prevMouse.x = t.clientX;
+                    prevMouse.y = t.clientY;
+                    player.yaw -= dx * 0.0045;
+                    player.pitch = Math.max(-1.3, Math.min(1.3, player.pitch - dy * 0.0045));
+                }
+            }
+        }, { passive: true });
+
+        // On-Screen Touch D-Pad Buttons
+        const bindTouchKey = (id, keyName) => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.addEventListener('touchstart', (e) => { e.preventDefault(); keys[keyName] = true; });
+            el.addEventListener('touchend', (e) => { e.preventDefault(); keys[keyName] = false; });
+            el.addEventListener('mousedown', () => { keys[keyName] = true; });
+            el.addEventListener('mouseup', () => { keys[keyName] = false; });
+        };
+        bindTouchKey('t-up', 'w');
+        bindTouchKey('t-down', 's');
+        bindTouchKey('t-left', 'a');
+        bindTouchKey('t-right', 'd');
+
+        // Keyboard Controls
+        window.addEventListener('keydown', (e) => {
+            const code = e.code;
+            if (code === 'KeyW' || code === 'ArrowUp') keys.w = true;
+            if (code === 'KeyS' || code === 'ArrowDown') keys.s = true;
+            if (code === 'KeyA' || code === 'ArrowLeft') keys.a = true;
+            if (code === 'KeyD' || code === 'ArrowRight') keys.d = true;
+            if (code === 'ShiftLeft' || code === 'ShiftRight') keys.shift = true;
+
+            if (code === 'KeyF') toggleFlashlight();
+            if (code === 'KeyE') interactAction();
+            if (code === 'KeyQ') askChatHint();
+            if (code === 'KeyP' || code === 'Escape') {
+                if (gameState === 'PLAYING' || gameState === 'PAUSED') togglePauseMenu();
+            }
+        });
+
+        window.addEventListener('keyup', (e) => {
+            const code = e.code;
+            if (code === 'KeyW' || code === 'ArrowUp') keys.w = false;
+            if (code === 'KeyS' || code === 'ArrowDown') keys.s = false;
+            if (code === 'KeyA' || code === 'ArrowLeft') keys.a = false;
+            if (code === 'KeyD' || code === 'ArrowRight') keys.d = false;
+            if (code === 'ShiftLeft' || code === 'ShiftRight') keys.shift = false;
+        });
+    }
+
+    function onWindowResize() {
+        if (!camera || !renderer) return;
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    /********************************************************************
+     * 14. MAIN ANIMATION LOOP
+     ********************************************************************/
+    let prevTime = performance.now();
+
+    function animateLoop(nowMs) {
+        requestAnimationFrame(animateLoop);
+
+        const dt = Math.min(0.1, (nowMs - prevTime) / 1000);
+        prevTime = nowMs;
+        const nowSec = nowMs / 1000;
+
+        if (gameState === 'TITLE') {
+            // Cinematic slow panning preview of the Backrooms on the Title Screen
+            const camX = CELL_SIZE * 5.5 + Math.sin(nowSec * 0.25) * 2.2;
+            const camZ = CELL_SIZE * 5.5 + Math.cos(nowSec * 0.25) * 2.2;
+            camera.position.set(camX, 1.7, camZ);
+            camera.rotation.order = 'YXZ';
+            camera.rotation.y = nowSec * 0.18;
+            camera.rotation.x = Math.sin(nowSec * 0.4) * 0.05;
+            renderer.render(scene, camera);
+            return;
+        }
+
+        if (gameState === 'PLAYING') {
+            streamSeconds += dt;
+            document.getElementById('stream-timer').textContent = formatTime(streamSeconds, true);
+
+            // Dynamic Viewer Count & Live Chat ticks
+            const chatInterval = monster.state === 'CHASE' ? 0.95 : 2.5;
+            if (nowSec - lastChatTime > chatInterval) {
+                addChatMessage();
+                const deltaViewers = monster.state === 'CHASE'
+                    ? Math.floor(15 + Math.random() * 45)
+                    : Math.floor(-4 + Math.random() * 14);
+                viewerCount = Math.max(85, viewerCount + deltaViewers);
+                peakViewers = Math.max(peakViewers, viewerCount);
+                document.getElementById('viewer-count').textContent = viewerCount.toLocaleString();
+                lastChatTime = nowSec;
+            }
+
+            // Periodic SuperChat Donations
+            if (nowSec - lastSuperchatTime > 22) {
+                if (Math.random() < 0.45 || player.battery < 25) {
+                    triggerSuperChat();
+                }
+                lastSuperchatTime = nowSec;
+            }
+
+            updatePlayer(dt, nowSec);
+            updateMonsterAI(dt, nowSec);
+            updateEnvironmentAndHUD(nowSec);
+        } else if (gameState === 'JUMPSCARE') {
+            jumpscareTimer -= dt;
+            // Violent camera shake locking onto monster's screaming head
+            camera.position.set(
+                player.pos.x + (Math.random() - 0.5) * 0.22,
+                1.72 + (Math.random() - 0.5) * 0.22,
+                player.pos.z + (Math.random() - 0.5) * 0.22
+            );
+            monster.limbs.headGroup.rotation.z = (Math.random() - 0.5) * 0.9;
+            document.getElementById('glitch-layer').style.opacity = '0.95';
+            if (jumpscareTimer <= 0) {
+                showGameOverModal();
+            }
+        }
+
+        renderer.render(scene, camera);
+    }
+
+    window.onload = function () {
+        setLanguage('ko');
+        initThreeScene();
+        setupInputListeners();
+        requestAnimationFrame(animateLoop);
+    };
+    </script>
+</body>
+</html>
